@@ -46,3 +46,7 @@ Thumbs.db
 *.swp
 *.tmp
 scratch/
+
+# PlantUML tools & compiled binaries
+*.jar
+diagramas/.tools/

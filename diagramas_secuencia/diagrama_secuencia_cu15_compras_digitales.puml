@@ -1,0 +1,189 @@
+@startuml Diagrama_Secuencia_CU15_Realizar_Compras_Digitales_EA
+' ==============================================================================
+' DIAGRAMA DE SECUENCIA (UML 2.5 / ICONIX) - CU15: REALIZAR COMPRAS DIGITALES
+' Estilo: Enterprise Architect 15 / 16
+' Proyecto: ECOMMERCE_TIENDA (SaaS Multi-Tenant)
+' Reglas Estrictas:
+'  1. Un solo Controlador Físico: CU15_CompraDigitalController
+'  2. 13 Entidades Exactas (Correspondencia 1-a-1 con Robustez y Controller)
+'  3. Mapeo estricto: Boundary -> Control -> Entities
+' ==============================================================================
+
+title **sd Diagrama de Secuencia - CU15 Realizar Compras Digitales (Checkout Online)**
+
+' --- CONFIGURACIÓN VISUAL ENTERPRISE ARCHITECT ---
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 10
+skinparam roundcorner 6
+skinparam shadowing true
+
+skinparam sequence {
+    ArrowColor #2C3E50
+    ArrowFontColor #1B2631
+    ArrowFontSize 9
+    
+    LifeLineBorderColor #2C3E50
+    LifeLineBackgroundColor #F8F9F9
+    
+    ParticipantBorderColor #2C3E50
+    ParticipantBackgroundColor #FFF2CC
+    ParticipantFontSize 10
+    ParticipantFontStyle bold
+    
+    ActorBorderColor #2C3E50
+    ActorBackgroundColor #FFF2CC
+    ActorFontSize 10
+    ActorFontStyle bold
+    
+    GroupBorderColor #5D6D7E
+    GroupHeaderFontColor #1B2631
+    GroupBackgroundColor #FBFCFC
+    
+    BoxBorderColor #BDC3C7
+    BoxBackgroundColor #F8F9F9
+    BoxFontSize 10
+    BoxFontStyle bold
+}
+
+' ==============================================================================
+' PARTICIPANTES (BCE: 1 ACTOR, 1 BOUNDARY, 1 CONTROL, 13 ENTITIES)
+' ==============================================================================
+actor "Cliente / Comprador\nDigital" as ActCliente #FFF2CC
+
+box "Capa de Presentación (Frontend)" #EBF5FB
+    boundary "UI : CheckoutModal\n(Modal : Checkout Digital)" as B_Checkout #AED6F1
+end box
+
+box "Capa de Control (1 Solo Controlador Backend)" #FEF9E7
+    control "CU15_CompraDigitalController" as C_Ctrl #FCF3CF
+end box
+
+box "Capa de Dominio y Persistencia (13 Entidades Reales)" #EAFAF1
+    entity "Tenant" as E_Tenant #D4EFDF
+    entity "Usuario" as E_User #D4EFDF
+    entity "Cliente" as E_Cliente #D4EFDF
+    entity "Sucursal" as E_Suc #D4EFDF
+    entity "VarianteProducto" as E_Variante #D4EFDF
+    entity "Inventario" as E_Inv #D4EFDF
+    entity "Venta" as E_Venta #D4EFDF
+    entity "DetalleVenta" as E_Detalle #D4EFDF
+    entity "MetodoPago" as E_Metodo #D4EFDF
+    entity "Pago" as E_Pago #D4EFDF
+    entity "Carrito" as E_Carrito #D4EFDF
+    entity "CarritoItem" as E_Item #D4EFDF
+    entity "Bitacora" as E_Bitacora #D4EFDF
+end box
+
+' ==============================================================================
+' FLUJO SECUENCIAL Y MENSAJES NUMERADOS
+' ==============================================================================
+
+autonumber 1.1 "<b>[0.0]</b>"
+
+== 1. Inicio de Checkout Digital ==
+
+ActCliente -> B_Checkout : confirmarCompra(datosEnvio, metodoPagoId, sucursalId)
+activate ActCliente
+activate B_Checkout #AED6F1
+
+B_Checkout -> C_Ctrl : POST /api/v1/cu15/compras-digitales/orden\n(OrdenCreate, Authorization: Bearer token)
+activate C_Ctrl #FCF3CF
+
+== 2. Validaciones de Contexto y Autenticación ==
+
+C_Ctrl -> E_Tenant : validarTenantActivo(tenant_id)
+activate E_Tenant #D4EFDF
+E_Tenant --> C_Ctrl : tenantActivoConfirmado
+deactivate E_Tenant
+
+C_Ctrl -> E_User : findByAuthToken(current_user.id)
+activate E_User #D4EFDF
+E_User --> C_Ctrl : usuarioAutenticado
+deactivate E_User
+
+C_Ctrl -> E_Cliente : findByUsuarioId(current_user.id)
+activate E_Cliente #D4EFDF
+E_Cliente --> C_Ctrl : cliente (o findOrCreate con datos de facturacion)
+deactivate E_Cliente
+
+C_Ctrl -> E_Suc : findOrFail(sucursal_id, activo=True)
+activate E_Suc #D4EFDF
+E_Suc --> C_Ctrl : sucursalDespachoValida
+deactivate E_Suc
+
+== 3. Validación de Ítems y Stock Disponible ==
+
+loop Para cada item en la orden (prendas solicitadas)
+    C_Ctrl -> E_Variante : with('prenda', 'color', 'talla')->findOrFail(variante_id)
+    activate E_Variante #D4EFDF
+    E_Variante --> C_Ctrl : datosVariante (sku, precio, talla)
+    deactivate E_Variante
+
+    C_Ctrl -> E_Inv : filterStockOnline(sucursalid, varianteid)
+    activate E_Inv #D4EFDF
+    E_Inv --> C_Ctrl : stockDisponible = (stockfisico - stockreservado)
+    deactivate E_Inv
+
+    alt stockDisponible < item.cantidad
+        C_Ctrl --> B_Checkout : 400 Bad Request ("Stock insuficiente en sucursal")
+        B_Checkout --> ActCliente : mostrarAlertaStockInsuficiente(prenda, stockDisponible)
+    end
+end
+
+== 4. Creación Transaccional de la Venta (Venta y DetalleVenta) ==
+
+C_Ctrl -> E_Venta : create(codigoventa="ORD-...", canal='ONLINE',\nestado='PAGADA', total, clienteid, sucursalid, tenant_id)
+activate E_Venta #D4EFDF
+E_Venta --> C_Ctrl : ventaCreada (id=105, codigoventa)
+deactivate E_Venta
+
+loop Para cada item validado
+    C_Ctrl -> E_Detalle : createMany(ventaid=nueva_venta.id, varianteid, cantidad, precio, subtotal)
+    activate E_Detalle #D4EFDF
+    E_Detalle --> C_Ctrl : detalleAsentado
+    deactivate E_Detalle
+
+    C_Ctrl -> E_Inv : descontarStockCentral(cantidad)
+    activate E_Inv #D4EFDF
+    E_Inv --> C_Ctrl : stockFisicoActualizado
+    deactivate E_Inv
+end
+
+== 5. Confirmación de Pago y Vaciado de Carrito ==
+
+C_Ctrl -> E_Metodo : findOrFail(metodo_pago_id)
+activate E_Metodo #D4EFDF
+E_Metodo --> C_Ctrl : metodoPagoValido (QR / Tarjeta / Pasarela)
+deactivate E_Metodo
+
+C_Ctrl -> E_Pago : create(ventaid, monto=total, metodoid, estado='APROBADO', ref="PAY-ORD...")
+activate E_Pago #D4EFDF
+E_Pago --> C_Ctrl : pagoRegistrado (id=88)
+deactivate E_Pago
+
+C_Ctrl -> E_Carrito : getActiveCart(usuario_id)
+activate E_Carrito #D4EFDF
+E_Carrito --> C_Ctrl : carritoActivo (carritoid=42)
+deactivate E_Carrito
+
+C_Ctrl -> E_Item : loadCartItems(carritoid)->delete()
+activate E_Item #D4EFDF
+E_Item --> C_Ctrl : itemsEliminados (carritoVaciado)
+deactivate E_Item
+
+== 6. Trazabilidad en Bitácora y Respuesta Final ==
+
+C_Ctrl -> E_Bitacora : create(AUDIT_COMPRA_DIGITAL, usuario_id, detalle="Compra online completada")
+activate E_Bitacora #D4EFDF
+E_Bitacora --> C_Ctrl : auditoriaConfirmada
+deactivate E_Bitacora
+
+C_Ctrl --> B_Checkout : 201 Created (ordenCreadaResponse: id, codigoventa, total, tracking)
+deactivate C_Ctrl
+
+B_Checkout --> ActCliente : renderizarConfirmacionYComprobante(codigoventa, tracking)
+deactivate B_Checkout
+deactivate ActCliente
+
+@enduml

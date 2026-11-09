@@ -14,9 +14,15 @@ from sqlalchemy import func
 from fastapi import HTTPException, status
 
 from app.models.models import (
-    UsuarioModel, RolModel, TenantModel, ClienteModel, BitacoraModel,
     Usuario, Rol, Tenant, Cliente, Bitacora
 )
+
+# Aliases internos de compatibilidad ORM
+UsuarioModel = Usuario
+RolModel = Rol
+TenantModel = Tenant
+ClienteModel = Cliente
+BitacoraModel = Bitacora
 from app.schemas.schemas import UsuarioCreate
 from app.core.config import settings
 from app.core.security import (

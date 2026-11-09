@@ -9,8 +9,11 @@ from app.models.models import (
     Venta, DetalleVenta, Pago, MetodoPago,
     Carrito, CarritoItem, Usuario, Cliente,
     Sucursal, Inventario, VarianteProducto,
-    Tenant, Bitacora, UsuarioModel
+    Tenant, Bitacora
 )
+
+# Alias de tipo ORM
+UsuarioModel = Usuario
 from app.schemas.orden_schema import OrdenCreate, ActualizarEstadoOrdenRequest
 from app.services.cu15_realizar_compras_digitales.compra_digital_service import CompraDigitalService
 

@@ -1,0 +1,83 @@
+@startuml Diagrama_Robustez_CU17_Consultar_Historial_Compras_Reservas_EA
+' DIAGRAMA DE ROBUSTEZ Y COMUNICACIÓN (BCE) - CU17
+' Caso de Uso: CU17 - Consultar Historial de Compras y Reservas
+' Estilo: Enterprise Architect 15 / 16 (Notación de Ivar Jacobson / ICONIX)
+' Proyecto: ECOMMERCE_TIENDA (SaaS Multi-Tenant)
+
+title **sd Diagrama de Comunicacion / Robustez - CU17 Consultar Historial Compras y Reservas**
+
+left to right direction
+
+' --- CONFIGURACIÓN DE ESTILO ENTERPRISE ARCHITECT ---
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 11
+skinparam shadowing true
+skinparam roundcorner 12
+
+skinparam actor {
+    BackgroundColor #FFF2CC
+    BorderColor #2C3E50
+    FontColor #1A252F
+    FontStyle bold
+}
+
+skinparam control {
+    BackgroundColor #FFF2CC
+    BorderColor #B7950B
+    FontColor #17202A
+    FontStyle bold
+}
+
+skinparam entity {
+    BackgroundColor #FFF2CC
+    BorderColor #B7950B
+    FontColor #17202A
+    FontStyle bold
+}
+
+skinparam arrow {
+    Color #5D6D7E
+    FontColor #1B2631
+    FontSize 10
+}
+
+' 1. ACTOR
+actor "Cliente / Comprador\nRegistrado" as ActCliente
+
+' 2. VISTAS REALES DEL FRONTEND (BOUNDARIES)
+boundary "Page : Historial Compras y Reservas" as B_HistView #AED6F1
+
+' 3. CONTROLADOR REAL DEL BACKEND (CONTROL) - 1 Solo Controlador Físico
+control "CU17_HistorialController" as C_Hist
+
+' 4. ENTIDADES REALES UTILIZADAS (ENTITIES) - Coinciden 1-a-1 con el Controller
+entity "Venta" as E_Venta
+entity "DetalleVenta" as E_DetVenta
+entity "Reserva" as E_Reserva
+entity "ReservaDetalle" as E_DetReserva
+entity "Usuario" as E_User
+entity "Cliente" as E_Cliente
+entity "Tenant" as E_Tenant
+
+' ==============================================================================
+' COMUNICACIONES UNIFICADAS (1 LÍNEA ÚNICA POR ASOCIACIÓN)
+' Mensajes ordenados secuencialmente y coloreados por flujo
+' ==============================================================================
+
+' --- 1. INTERACCIÓN ACTOR -> BOUNDARY ---
+ActCliente -- B_HistView : <font color="#1B2631">1: abrirPanelHistorial() -></font>\n<font color="#1B2631">1.7: mostrarMetricasResumen() -></font>\n<font color="#C0392B">2: seleccionarTabCompras() -></font>\n<font color="#C0392B">2.6: renderizarListaCompras() -></font>\n<font color="#1E8449">3: seleccionarTabReservas() -></font>\n<font color="#1E8449">3.6: renderizarListaReservas() -></font>
+
+' --- 2. INVOCACIÓN BOUNDARY -> CONTROL ---
+B_HistView -- C_Hist : <font color="#1B2631">1.1: obtener_resumen_cliente(Request) -></font>\n<font color="#1B2631">1.6: resumenMetricasResponse() -></font>\n<font color="#C0392B">2.1: listar_compras_cliente(usuario_id) -></font>\n<font color="#C0392B">2.5: comprasClienteResponse() -></font>\n<font color="#1E8449">3.1: listar_reservas_cliente(usuario_id) -></font>\n<font color="#1E8449">3.5: reservasClienteResponse() -></font>
+
+' --- 3. ACCESO A DATOS CONTROL -> ENTITY ---
+C_Hist -- E_Tenant : <font color="#1B2631">1.2: validarTenantActivo() -></font>\n<font color="#C0392B">2.4: asociarAlTenant() -></font>\n<font color="#1E8449">3.4: asociarAlTenant() -></font>
+C_Hist -- E_User : <font color="#1B2631">1.3: findByAuthToken() -></font>
+C_Hist -- E_Cliente : <font color="#1B2631">1.4: findByUsuarioId() -></font>
+C_Hist -- E_Venta : <font color="#1B2631">1.5: count().sum(total_compras) -></font>\n<font color="#C0392B">2.2: filter(usuario_id)->orderBy('fecha', 'desc')->get() -></font>
+C_Hist -- E_DetVenta : <font color="#C0392B">2.3: with('prendas.variantes')->get() -></font>
+C_Hist -- E_Reserva : <font color="#1E8449">3.2: filter(usuario_id)->orderBy('fecha', 'desc')->get() -></font>
+C_Hist -- E_DetReserva : <font color="#1E8449">3.3: with('prendas_reservadas')->get() -></font>
+
+@enduml
