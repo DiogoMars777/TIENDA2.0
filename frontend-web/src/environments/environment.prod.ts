@@ -11,6 +11,6 @@ export const environment = {
       const customApi = localStorage.getItem('API_URL') || (window as any).__API_URL__;
       if (customApi) return customApi;
     }
-    return 'https://tienda-production-3fc5.up.railway.app/api/v1';
+    return 'https://tienda20-production.up.railway.app/api/v1';
   }
 };

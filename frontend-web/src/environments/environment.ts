@@ -14,7 +14,7 @@ export const environment = {
       const host = window.location.hostname;
       // 2. Si corre desplegado en Vercel (*.vercel.app) u otro dominio público sin backend local
       if (host.includes('vercel.app') || (host !== 'localhost' && host !== '127.0.0.1' && !host.startsWith('192.168.'))) {
-        return 'https://tienda-production-3fc5.up.railway.app/api/v1';
+        return 'https://tienda20-production.up.railway.app/api/v1';
       }
 
       // 3. Si corre en desarrollo local
