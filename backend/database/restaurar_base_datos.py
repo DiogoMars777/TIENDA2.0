@@ -95,14 +95,18 @@ def main():
         print("   pip install psycopg2-binary")
         sys.exit(1)
 
-    backup_sql_path = Path(__file__).resolve().parent / "backup_completo.sql"
+    backup_sql_path = Path(__file__).resolve().parent / "seeder.sql"
+    if not backup_sql_path.exists():
+        backup_sql_path = Path(__file__).resolve().parent / "backup_completo.sql"
+    if not backup_sql_path.exists():
+        backup_sql_path = Path("backend/database/seeder.sql")
     if not backup_sql_path.exists():
         backup_sql_path = Path("backend/database/backup_completo.sql")
     if not backup_sql_path.exists():
-        backup_sql_path = Path("database/backup_completo.sql")
+        backup_sql_path = Path("database/seeder.sql")
 
     if not backup_sql_path.exists():
-        print(f"\n❌ Error: No se encontró el archivo de respaldo 'backup_completo.sql'.")
+        print(f"\n❌ Error: No se encontró el archivo de datos 'seeder.sql'.")
         print(f"Buscado en: {backup_sql_path}")
         sys.exit(1)
 
