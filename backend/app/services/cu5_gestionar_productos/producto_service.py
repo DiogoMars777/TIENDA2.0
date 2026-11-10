@@ -144,10 +144,10 @@ class ProductoService:
         db.commit()
         db.refresh(nuevo)
 
-        # 4. Asegurar variantes e inventarios iniciales si corresponde
+        # 4. Asegurar variantes e inventarios iniciales para las sucursales del tenant
         try:
-            from app.controllers.cu13_gestionar_inventario_movimientos.inventario_controller import InventarioController
-            InventarioController._asegurar_variantes_e_inventario(db)
+            from app.services.cu13_gestionar_inventario_movimientos.inventario_service import InventarioService
+            InventarioService.asegurar_variantes_e_inventario(db, tenant_id=tenant_id)
         except Exception:
             pass
 

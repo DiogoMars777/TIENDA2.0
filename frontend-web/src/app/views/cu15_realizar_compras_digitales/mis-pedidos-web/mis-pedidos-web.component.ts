@@ -30,11 +30,14 @@ export class MisPedidosWebComponent implements OnInit {
   compras: CompraHistorialDTO[] = [];
   resumen: ResumenClienteDTO | null = null;
   loading = true;
+  isAdminView = false;
 
   constructor(
     private historialService: HistorialService,
     private router: Router
-  ) {}
+  ) {
+    this.isAdminView = this.router.url.startsWith('/admin');
+  }
 
   ngOnInit(): void {
     this.cargarDatos();
@@ -60,7 +63,7 @@ export class MisPedidosWebComponent implements OnInit {
   }
 
   volverATienda(): void {
-    this.router.navigate(['/catalogo']);
+    this.router.navigate([this.isAdminView ? '/admin/catalogo' : '/catalogo']);
   }
 
   verComprobante(ventaId: number): void {

@@ -121,7 +121,7 @@ class ReservaService:
     validación de cuota máxima de reservas por cliente y auditoría de eventos.
     """
 
-    MAX_RESERVAS_ACTIVAS_POR_CLIENTE = 3
+    MAX_RESERVAS_ACTIVAS_POR_CLIENTE = 25
 
     @classmethod
     def _obtener_usuario_reserva(cls, db: Session, usuario_id: int, tenant_id: int = 1) -> UsuarioModel:
@@ -137,6 +137,10 @@ class ReservaService:
             UsuarioModel.id == usuario_id,
             UsuarioModel.tenant_id == tenant_id
         ).first()
+        if not user:
+            user = db.query(UsuarioModel).filter(
+                UsuarioModel.id == usuario_id
+            ).first()
 
         if user:
             return user
@@ -266,6 +270,14 @@ class ReservaService:
             SucursalModel.tenant_id == tenant_id,
             SucursalModel.activo == True
         ).first()
+
+        if not sucursal:
+            sucursal = db.query(SucursalModel).filter(
+                SucursalModel.tenant_id == tenant_id,
+                SucursalModel.activo == True
+            ).first()
+            if sucursal:
+                sucursal_id = sucursal.id
 
         if not sucursal:
             raise HTTPException(

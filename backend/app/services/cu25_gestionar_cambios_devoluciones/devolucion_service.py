@@ -36,26 +36,46 @@ class DevolucionService:
     - Notificaciones al cliente (CU19) y Auditoría Nativa en Bitácora (CU26).
     """
 
+    @staticmethod
+    def _extraer_nombre_atributo(obj: Any, attr: str, default: str = "") -> str:
+        val = getattr(obj, attr, None)
+        if val is None:
+            return default
+        if hasattr(val, "nombre"):
+            return str(val.nombre or default)
+        return str(val)
+
     @classmethod
     def validar_venta_para_cambio(
         cls,
         db: Session,
         tenant_id: int,
-        venta_id: int,
+        venta_id: Any,
         plazo_dias: int = 15
     ) -> Dict[str, Any]:
         """
-        Verifica si la venta existe, si está dentro del plazo de garantía y lista las prendas adquiridas.
+        Verifica si la venta existe (por ID numérico o por Código de Venta como VTA-SYNC-...),
+        si está dentro del plazo de garantía y lista las prendas adquiridas.
         """
-        venta = db.query(VentaModel).filter(
-            VentaModel.id == venta_id,
-            VentaModel.tenant_id == tenant_id
-        ).first()
+        raw_query = str(venta_id).strip()
+        venta = None
+
+        if raw_query.isdigit():
+            venta = db.query(VentaModel).filter(
+                VentaModel.id == int(raw_query),
+                VentaModel.tenant_id == tenant_id
+            ).first()
+
+        if not venta:
+            venta = db.query(VentaModel).filter(
+                VentaModel.tenant_id == tenant_id,
+                VentaModel.codigoventa.ilike(f"%{raw_query}%")
+            ).order_by(desc(VentaModel.id)).first()
 
         if not venta:
             return {
                 "venta_valida": False,
-                "venta_id": venta_id,
+                "venta_id": int(raw_query) if raw_query.isdigit() else 0,
                 "codigoventa": "NO_EXISTE",
                 "fecha_venta": datetime.utcnow(),
                 "dias_transcurridos": 0,
@@ -65,7 +85,7 @@ class DevolucionService:
                 "sucursal_nombre": "Desconocida",
                 "total_venta": 0.0,
                 "items_comprados": [],
-                "mensaje": f"No se encontró la venta #{venta_id} en el tenant activo."
+                "mensaje": f"No se encontró la venta '{raw_query}' en tu empresa actual."
             }
 
         ahora = datetime.utcnow()
@@ -98,8 +118,8 @@ class DevolucionService:
                 "variante_id": det.varianteid,
                 "sku": getattr(var, "sku", f"VAR-{det.varianteid}"),
                 "producto_nombre": getattr(prod, "nombre", "Prenda"),
-                "talla": getattr(var, "talla", "M"),
-                "color": getattr(var, "color", "Estándar"),
+                "talla": cls._extraer_nombre_atributo(var, "talla", "M"),
+                "color": cls._extraer_nombre_atributo(var, "color", "Estándar"),
                 "cantidad_comprada": det.cantidad,
                 "precio_unitario": float(det.preciounitario),
                 "subtotal": float(det.subtotal)
@@ -149,6 +169,8 @@ class DevolucionService:
 
         codigo = f"DEV-{datetime.utcnow().strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
         cli_id = cliente_id or (venta.clienteid if venta else 1)
+        if venta and venta.sucursalid:
+            sucursal_id = venta.sucursalid
 
         devolucion = Devolucion(
             tenant_id=tenant_id,
@@ -309,6 +331,10 @@ class DevolucionService:
 
         db.commit()
         db.refresh(devolucion)
+        listado = cls.listar_devoluciones(db=db, tenant_id=tenant_id)
+        for item_dto in listado:
+            if item_dto["id"] == devolucion.id:
+                return item_dto
         return devolucion
 
     @classmethod
@@ -372,13 +398,13 @@ class DevolucionService:
                     "variante_devuelta_id": d.variante_devuelta_id,
                     "variante_devuelta_sku": var_dev.sku if var_dev else None,
                     "producto_devuelto_nombre": prod_dev.nombre if prod_dev else f"Prenda #{d.variante_devuelta_id}",
-                    "talla_devuelta": var_dev.talla if var_dev else None,
-                    "color_devuelto": var_dev.color if var_dev else None,
+                    "talla_devuelta": cls._extraer_nombre_atributo(var_dev, "talla", "M") if var_dev else None,
+                    "color_devuelto": cls._extraer_nombre_atributo(var_dev, "color", "Estándar") if var_dev else None,
                     "variante_nueva_id": d.variante_nueva_id,
                     "variante_nueva_sku": var_new.sku if var_new else None,
                     "producto_nuevo_nombre": prod_new.nombre if prod_new else None,
-                    "talla_nueva": var_new.talla if var_new else None,
-                    "color_nueva": var_new.color if var_new else None,
+                    "talla_nueva": cls._extraer_nombre_atributo(var_new, "talla", "M") if var_new else None,
+                    "color_nueva": cls._extraer_nombre_atributo(var_new, "color", "Estándar") if var_new else None,
                     "cantidad": d.cantidad,
                     "precio_unitario": float(d.precio_unitario),
                     "subtotal": float(d.subtotal),

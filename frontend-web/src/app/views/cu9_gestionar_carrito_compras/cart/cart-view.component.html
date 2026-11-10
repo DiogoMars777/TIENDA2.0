@@ -9,12 +9,12 @@
   <header class="cart-header">
     <div class="header-container">
       <div class="header-left">
-        <button mat-icon-button routerLink="/catalogo" class="btn-back" matTooltip="Regresar al Catálogo">
+        <button mat-icon-button [routerLink]="isAdminView ? '/admin/catalogo' : '/catalogo'" class="btn-back" matTooltip="Regresar al Catálogo">
           <mat-icon>arrow_back</mat-icon>
         </button>
         <div>
-          <h1>Mi Carrito de Compras <span>(CU09)</span></h1>
-          <p class="subtitle">Gestiona tus prendas y valida existencias en tiendas físicas</p>
+          <h1>Carrito de Compras <span>(CU09)</span></h1>
+          <p class="subtitle">Gestiona las prendas y valida existencias en tiendas físicas</p>
         </div>
       </div>
       <button *ngIf="carrito && carrito.items.length > 0" class="btn-clear-cart" (click)="vaciar()">
@@ -36,7 +36,7 @@
       <mat-icon class="empty-icon">shopping_cart_checkout</mat-icon>
       <h2>Tu carrito de compras está vacío</h2>
       <p>Aún no has agregado poleras a tu pedido. Explora nuestro catálogo y selecciona tus tallas favoritas.</p>
-      <button routerLink="/catalogo" class="btn-explore">
+      <button [routerLink]="isAdminView ? '/admin/catalogo' : '/catalogo'" class="btn-explore">
         <mat-icon>storefront</mat-icon>
         <span>Explorar Catálogo</span>
       </button>
@@ -218,7 +218,7 @@
             <span>Apartar y Pagar en Tienda (CU10)</span>
           </button>
 
-          <button routerLink="/catalogo" class="btn-keep-shopping">
+          <button [routerLink]="isAdminView ? '/admin/catalogo' : '/catalogo'" class="btn-keep-shopping">
             <mat-icon>add_circle_outline</mat-icon>
             <span>Seguir agregando prendas</span>
           </button>

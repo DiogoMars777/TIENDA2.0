@@ -22,6 +22,7 @@ class PlanSuscripcion(Base):
     limite_sucursales = Column(Integer, nullable=False, default=1)
     limite_usuarios = Column(Integer, nullable=False, default=3)
     limite_productos = Column(Integer, nullable=False, default=100)
+    habilitar_reportes_ia = Column(Boolean, default=False)
     habilitar_vestidor_ia = Column(Boolean, default=False)
     activo = Column(Boolean, default=True)
     fechacreacion = Column(DateTime, default=datetime.utcnow)

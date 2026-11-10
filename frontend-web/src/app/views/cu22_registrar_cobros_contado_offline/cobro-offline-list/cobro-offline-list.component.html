@@ -280,10 +280,13 @@
           <!-- Sucursal -->
           <div class="form-group">
             <label>Sucursal de Venta *</label>
-            <select [(ngModel)]="cobroForm.sucursal_id">
-              <option [value]="1">Boutique Central Equipetrol (Sucursal #1)</option>
-              <option [value]="2">Boutique Mall Las Brisas (Sucursal #2)</option>
-              <option [value]="3">Boutique Ventura Mall (Sucursal #3)</option>
+            <select [(ngModel)]="cobroForm.sucursal_id" (change)="onCambioSucursalCobro()">
+              <ng-container *ngIf="sucursales.length > 0">
+                <option *ngFor="let s of sucursales" [ngValue]="s.id">{{ s.nombre }} ({{ s.ciudad }})</option>
+              </ng-container>
+              <ng-container *ngIf="sucursales.length === 0">
+                <option [ngValue]="1">Sucursal Central ({{ tenantNombre }})</option>
+              </ng-container>
             </select>
           </div>
 
@@ -421,7 +424,7 @@
         <!-- Recibo Formato POS 80mm -->
         <div class="thermal-ticket" id="thermal-ticket-print">
           <div class="ticket-header">
-            <h2 class="store-name">SHOPYN GOLDEN STORE</h2>
+            <h2 class="store-name">{{ tenantNombre | uppercase }}</h2>
             <p class="store-sub">Boutique & Retail de Poleras Exclusivas</p>
             <p class="store-nit">NIT: 1029384029 | Casa Matriz: Santa Cruz</p>
             <div class="contingency-tag">*** RÉGIMEN DE CONTINGENCIA OFFLINE ***</div>

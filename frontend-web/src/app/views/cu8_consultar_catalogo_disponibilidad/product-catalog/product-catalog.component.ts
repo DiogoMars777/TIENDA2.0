@@ -7,7 +7,7 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RouterModule } from '@angular/router';
+import { Router, RouterModule } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { MatSelectModule } from '@angular/material/select';
@@ -20,6 +20,7 @@ import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 
 import { InventoryService } from '../../../services/cu8_consultar_catalogo_disponibilidad/inventory.service';
 import { CartService } from '../../../services/cu9_gestionar_carrito_compras/cart.service';
+import { ReservationService } from '../../../services/cu10_gestionar_reservas_prendas/reservation.service';
 import { AuthService } from '../../../core/services/auth.service';
 import { VirtualFittingModalComponent } from '../../cu12_vestidor_virtual_ia/virtual-fitting-modal/virtual-fitting-modal.component';
 import {
@@ -83,15 +84,22 @@ export class ProductCatalogComponent implements OnInit, OnDestroy {
   // Carrito local rápido (contador para el header)
   itemsCarritoCount = 0;
   isAdmin = false;
+  isAdminView = false;
+  tenantNombre = 'Mi Tienda';
 
   constructor(
     public inventoryService: InventoryService,
     private cartService: CartService,
-    public authService: AuthService
-  ) {}
+    private reservationService: ReservationService,
+    public authService: AuthService,
+    private router: Router
+  ) {
+    this.isAdminView = this.router.url.startsWith('/admin');
+  }
 
   ngOnInit(): void {
     this.isAdmin = this.authService.isAdmin();
+    this.tenantNombre = localStorage.getItem('tenant_nombre') || 'Shopyn Golden Store';
     this.cargarSucursales();
     this.cargarCatalogo();
 
@@ -231,13 +239,31 @@ export class ProductCatalogComponent implements OnInit, OnDestroy {
     this.productoDisponibilidad = null;
   }
 
+  toggleModoOffline(): void {
+    const ahoraOffline = this.inventoryService.toggleModoOfflineSimulado();
+    if (!ahoraOffline) {
+      this.reservationService.sincronizarReservasOffline().subscribe({
+        next: (creadas) => {
+          if (creadas && creadas.length > 0) {
+            alert(`🟢 Conexión restablecida: Se sincronizaron automáticamente ${creadas.length} reserva(s) creada(s) sin internet con el servidor central.`);
+          }
+          this.cargarSucursales();
+          this.cargarCatalogo();
+        }
+      });
+    } else {
+      this.cargarCatalogo();
+    }
+  }
+
   agregarAlCarrito(producto: ProductoCatalogoItem): void {
     const variante = this.getVarianteSeleccionada(producto.id);
     if (!variante || variante.stock <= 0) return;
 
     this.cartService.agregarItem(variante.variante_id, 1, this.sucursalSeleccionadaId).subscribe({
       next: () => {
-        alert(`¡Añadido al carrito con éxito!\n${producto.nombre}\nTalla: ${variante.talla} | Color: ${variante.color}`);
+        const modoTxt = this.offlineMode ? ' (Guardado en Carrito Local Offline)' : '';
+        alert(`¡Añadido al carrito${modoTxt}!\n${producto.nombre}\nTalla: ${variante.talla} | Color: ${variante.color}`);
       },
       error: (err: any) => {
         alert(err.error?.detail || 'Error al agregar al carrito');

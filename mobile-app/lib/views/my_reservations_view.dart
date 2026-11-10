@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../controllers/reservation_controller.dart';
 import '../controllers/auth_controller.dart';
+import '../controllers/product_controller.dart';
 import '../models/reservation_model.dart';
 
 class MyReservationsView extends StatefulWidget {
@@ -24,7 +25,12 @@ class _MyReservationsViewState extends State<MyReservationsView> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final token = context.read<AuthController>().currentUser?.token;
-      context.read<ReservationController>().cargarMisReservas(token: token);
+      final prodCtrl = context.read<ProductController>();
+      context.read<ReservationController>().cargarMisReservas(
+        token: token,
+        tenantId: prodCtrl.empresaSeleccionadaId,
+        modoOfflineSimulado: prodCtrl.modoOfflineSimulado,
+      );
     });
   }
 
@@ -284,47 +290,54 @@ class _MyReservationsViewState extends State<MyReservationsView> {
 
   @override
   Widget build(BuildContext context) {
+    final prodCtrl = Provider.of<ProductController>(context);
+
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),
       appBar: AppBar(
         backgroundColor: const Color(0xFF1E293B),
         elevation: 0,
-        title: const Text(
-          'Mis Reservas (CU10)',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        title: Text(
+          'Reservas - ${prodCtrl.empresaActual.nombre}',
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
         ),
         iconTheme: const IconThemeData(color: Colors.white),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.sync, color: Color(0xFF38BDF8)),
+            tooltip: 'Sincronizar Reservas',
+            onPressed: () async {
+              final token = context.read<AuthController>().currentUser?.token;
+              final syncCount = await context.read<ReservationController>().sincronizarReservasOffline(
+                tenantId: prodCtrl.empresaSeleccionadaId,
+                token: token,
+              );
+              await context.read<ReservationController>().cargarMisReservas(
+                token: token,
+                tenantId: prodCtrl.empresaSeleccionadaId,
+                modoOfflineSimulado: prodCtrl.modoOfflineSimulado,
+              );
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      syncCount > 0
+                          ? '¡$syncCount reserva(s) offline sincronizadas con el servidor!'
+                          : 'Listado de reservas actualizado.',
+                    ),
+                    backgroundColor: Colors.teal,
+                  ),
+                );
+              }
+            },
+          ),
+        ],
       ),
       body: Consumer<ReservationController>(
         builder: (context, controller, child) {
           if (controller.cargando && controller.reservas.isEmpty) {
             return const Center(
               child: CircularProgressIndicator(color: Colors.indigoAccent),
-            );
-          }
-
-          if (controller.error != null && controller.reservas.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.error_outline, size: 64, color: Colors.redAccent),
-                  const SizedBox(height: 16),
-                  Text(
-                    controller.error!,
-                    style: const TextStyle(color: Colors.white70),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () {
-                      final token = context.read<AuthController>().currentUser?.token;
-                      controller.cargarMisReservas(token: token);
-                    },
-                    child: const Text('Reintentar'),
-                  ),
-                ],
-              ),
             );
           }
 
@@ -341,7 +354,7 @@ class _MyReservationsViewState extends State<MyReservationsView> {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'Agrega prendas al carrito y resérvalas para retiro en sucursal.',
+                    'Agrega prendas al carrito y resérvalas (incluso sin internet).',
                     style: TextStyle(color: Colors.white60),
                     textAlign: TextAlign.center,
                   ),
@@ -350,76 +363,145 @@ class _MyReservationsViewState extends State<MyReservationsView> {
             );
           }
 
-          return RefreshIndicator(
-            onRefresh: () async {
-              final token = context.read<AuthController>().currentUser?.token;
-              await controller.cargarMisReservas(token: token);
-            },
-            child: ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: controller.reservas.length,
-              itemBuilder: (context, index) {
-                final reserva = controller.reservas[index];
-                final statusColor = _getStatusColor(reserva.estado);
-
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 16),
+          return Column(
+            children: [
+              if (controller.pendientesOfflineCount > 0)
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF1E293B),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0x14FFFFFF)),
+                    color: const Color(0xFF92400E).withAlpha(110),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.amber),
                   ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Header con Código y Estado
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'CÓDIGO DE RESERVA',
-                                  style: TextStyle(
-                                    color: Colors.white60,
-                                    fontSize: 11,
-                                    letterSpacing: 0.8,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  reserva.codigoReserva,
-                                  style: const TextStyle(
-                                    color: Color(0xFF38BDF8),
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold,
-                                    fontFamily: 'monospace',
-                                  ),
-                                ),
-                              ],
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: statusColor.withAlpha(38),
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(color: statusColor.withAlpha(102)),
-                              ),
-                              child: Text(
-                                reserva.estado,
-                                style: TextStyle(
-                                  color: statusColor,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ),
-                          ],
+                  child: Row(
+                    children: [
+                      const Icon(Icons.cloud_upload_outlined, color: Colors.amber, size: 22),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Tienes ${controller.pendientesOfflineCount} reserva(s) guardadas sin internet en tu móvil.',
+                          style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
                         ),
+                      ),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.amber,
+                          foregroundColor: const Color(0xFF0F172A),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        ),
+                        onPressed: controller.sincronizando
+                            ? null
+                            : () async {
+                                if (prodCtrl.modoOfflineSimulado) {
+                                  prodCtrl.toggleModoOffline(forzar: false);
+                                }
+                                final token = context.read<AuthController>().currentUser?.token;
+                                final count = await controller.sincronizarReservasOffline(
+                                  tenantId: prodCtrl.empresaSeleccionadaId,
+                                  token: token,
+                                );
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        count > 0
+                                            ? '¡$count reserva(s) offline sincronizadas exitosamente con la tienda!'
+                                            : 'Aún sin conexión al servidor. Se sincronizarán al conectar internet.',
+                                      ),
+                                      backgroundColor: count > 0 ? Colors.green : Colors.orange.shade800,
+                                    ),
+                                  );
+                                }
+                              },
+                        child: Text(
+                          controller.sincronizando ? 'Sincronizando...' : 'Sincronizar',
+                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              Expanded(
+                child: RefreshIndicator(
+                  onRefresh: () async {
+                    final token = context.read<AuthController>().currentUser?.token;
+                    await controller.cargarMisReservas(
+                      token: token,
+                      tenantId: prodCtrl.empresaSeleccionadaId,
+                      modoOfflineSimulado: prodCtrl.modoOfflineSimulado,
+                    );
+                  },
+                  child: ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: controller.reservas.length,
+                    itemBuilder: (context, index) {
+                      final reserva = controller.reservas[index];
+                      final statusColor = reserva.esOffline
+                          ? Colors.amber
+                          : _getStatusColor(reserva.estado);
+
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1E293B),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: reserva.esOffline ? Colors.amber.withAlpha(140) : const Color(0x14FFFFFF),
+                          ),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Header con Código y Estado
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        reserva.esOffline ? 'RESERVA LOCAL OFFLINE' : 'CÓDIGO DE RESERVA',
+                                        style: TextStyle(
+                                          color: reserva.esOffline ? Colors.amber : Colors.white60,
+                                          fontSize: 11,
+                                          letterSpacing: 0.8,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        reserva.codigoReserva,
+                                        style: TextStyle(
+                                          color: reserva.esOffline ? Colors.amber : const Color(0xFF38BDF8),
+                                          fontSize: 20,
+                                          fontWeight: FontWeight.bold,
+                                          fontFamily: 'monospace',
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: statusColor.withAlpha(38),
+                                      borderRadius: BorderRadius.circular(20),
+                                      border: Border.all(color: statusColor.withAlpha(102)),
+                                    ),
+                                    child: Text(
+                                      reserva.esOffline ? 'OFFLINE (PENDIENTE SYNC)' : reserva.estado,
+                                      style: TextStyle(
+                                        color: statusColor,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
                         const Divider(color: Colors.white12, height: 24),
 
                         // Sucursal
@@ -565,7 +647,12 @@ class _MyReservationsViewState extends State<MyReservationsView> {
 
                                       if (confirmar == true) {
                                         final token = context.read<AuthController>().currentUser?.token;
-                                        await controller.cancelarReserva(reserva.id, token: token);
+                                        await controller.cancelarReserva(
+                                          reserva.id,
+                                          codigoReserva: reserva.codigoReserva,
+                                          token: token,
+                                          tenantId: prodCtrl.empresaSeleccionadaId,
+                                        );
                                       }
                                     },
                                     icon: const Icon(Icons.cancel_outlined, size: 14, color: Colors.redAccent),
@@ -585,9 +672,12 @@ class _MyReservationsViewState extends State<MyReservationsView> {
                 );
               },
             ),
-          );
-        },
-      ),
+          ),
+        ),
+      ],
+    );
+  },
+),
     );
   }
 }

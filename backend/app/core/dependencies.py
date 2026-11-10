@@ -80,8 +80,8 @@ def obtener_tenant_actual(
 get_current_tenant = obtener_tenant_actual
 get_current_tenant_user = get_current_active_user
 
-require_admin = require_roles("Administrador", "Admin", "Supervisor", "Gerente")
-require_staff = require_roles("Administrador", "Supervisor", "Cajero", "Admin", "Gerente")
+require_admin = require_roles("Superadmin", "SUPERADMIN", "Super Administrador", "Administrador", "Admin", "Supervisor", "Gerente")
+require_staff = require_roles("Superadmin", "SUPERADMIN", "Super Administrador", "Administrador", "Supervisor", "Cajero", "Admin", "Gerente")
 
 
 

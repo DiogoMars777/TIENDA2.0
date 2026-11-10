@@ -22,7 +22,7 @@ class DevolucionController:
     def validar_venta(
         db: Session,
         tenant_id: int,
-        venta_id: int,
+        venta_id: Any,
         plazo_dias: int = 15
     ) -> Dict[str, Any]:
         return DevolucionService.validar_venta_para_cambio(

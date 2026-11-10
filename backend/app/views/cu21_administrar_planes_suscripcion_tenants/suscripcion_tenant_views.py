@@ -14,7 +14,8 @@ from app.controllers.cu21_administrar_planes_suscripcion_tenants.suscripcion_ten
 from app.schemas.cu21_administrar_planes_suscripcion_tenants.suscripcion_tenant_schema import (
     PlanSuscripcionCreate, PlanSuscripcionUpdate, PlanSuscripcionResponse,
     TenantCreate, TenantResponse, TenantCambiarPlanRequest,
-    TenantToggleEstadoRequest, RenovarSuscripcionRequest, KpiSaaSResponse
+    TenantToggleEstadoRequest, RenovarSuscripcionRequest, KpiSaaSResponse,
+    AsignarAdminTenantRequest
 )
 
 router = APIRouter(prefix="/suscripciones-tenants", tags=["CU21 - Suscripciones y Tenants"])
@@ -70,6 +71,40 @@ def actualizar_plan(
 # ------------------------------------------------------------------------------
 # ENDPOINTS DE EMPRESAS / TENANTS
 # ------------------------------------------------------------------------------
+
+@router.get("/empresas-disponibles", summary="Listar empresas activas disponibles para selección en App Móvil / Catálogo")
+def listar_empresas_disponibles(
+    db: Session = Depends(get_db)
+):
+    """Retorna la lista pública de empresas (tenants) activas con sus sucursales para el selector de la App Móvil."""
+    from app.models.saas_tenant.tenant_model import Tenant
+    from app.models.models import SucursalModel
+    tenants = db.query(Tenant).filter(Tenant.activo == True).order_by(Tenant.id.asc()).all()
+    resultado = []
+    for t in tenants:
+        sucs = db.query(SucursalModel).filter(
+            SucursalModel.tenant_id == t.id,
+            SucursalModel.activo == True
+        ).order_by(SucursalModel.id.asc()).all()
+        resultado.append({
+            "id": t.id,
+            "nombre": t.nombre,
+            "slug": t.slug,
+            "activo": t.activo,
+            "plan_nombre": t.plan.nombre if t.plan else "Estándar",
+            "sucursales": [
+                {
+                    "id": s.id,
+                    "nombre": s.nombre,
+                    "ciudad": s.ciudad,
+                    "direccion": s.direccion,
+                    "telefono": s.telefono
+                }
+                for s in sucs
+            ]
+        })
+    return {"exito": True, "empresas": resultado}
+
 
 @router.get("/tenants", summary="Listar tenants con métricas de uso y suscripción actual")
 def listar_tenants(
@@ -175,3 +210,66 @@ def obtener_kpis(
     """Retorna métricas ejecutivas: Total tenants, MRR estimado, distribución de planes."""
     kpis = SuscripcionTenantController.obtener_kpis(db)
     return {"exito": True, "kpis": kpis}
+
+
+@router.post("/tenants/{tenant_id}/administrador", summary="Asignar o crear el usuario Administrador de un Tenant")
+def asignar_administrador_tenant(
+    tenant_id: int,
+    data: AsignarAdminTenantRequest,
+    db: Session = Depends(get_db),
+    current_user: UsuarioModel = Depends(get_current_user)
+):
+    """Permite al Administrador General asignar o cambiar las credenciales del Administrador de una empresa."""
+    try:
+        admin_data = SuscripcionTenantController.asignar_administrador_tenant(
+            db=db,
+            tenant_id=tenant_id,
+            nombre=data.nombre,
+            apellido=data.apellido,
+            email=data.email,
+            password=data.password,
+            usuario_id=current_user.id
+        )
+        return {"exito": True, "administrador": admin_data}
+    except ValueError as ve:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error al asignar administrador: {str(e)}")
+
+
+@router.get("/mi-plan", summary="Obtener el Tenant y Plan activo del usuario autenticado")
+def obtener_mi_plan(
+    db: Session = Depends(get_db),
+    current_user: UsuarioModel = Depends(get_current_user)
+):
+    """Retorna el tenant y el plan comercial asignado a la empresa del usuario actual."""
+    tenant_id = getattr(current_user, "tenant_id", 1) or 1
+    data = SuscripcionTenantController.obtener_tenant(db, tenant_id)
+    if not data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tenant no encontrado.")
+    t = data["tenant"]
+    p = t.plan
+    plan_dict = None
+    if p:
+        plan_dict = {
+            "id": p.id,
+            "nombre": p.nombre,
+            "descripcion": p.descripcion,
+            "precio_mensual": float(p.precio_mensual),
+            "limite_sucursales": p.limite_sucursales,
+            "limite_usuarios": p.limite_usuarios,
+            "limite_productos": p.limite_productos,
+            "habilitar_reportes_ia": bool(getattr(p, "habilitar_reportes_ia", False) or getattr(p, "habilitar_vestidor_ia", False)),
+            "habilitar_vestidor_ia": bool(getattr(p, "habilitar_vestidor_ia", False)),
+        }
+    return {
+        "exito": True,
+        "tenant": {
+            "id": t.id,
+            "nombre": t.nombre,
+            "slug": t.slug,
+            "activo": t.activo,
+            "plan": plan_dict,
+            "metricas_uso": data["metricas"]
+        }
+    }

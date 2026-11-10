@@ -90,7 +90,12 @@ export class AuthService {
 
   esAdministrador(): boolean {
     const role = this.obtenerRolUsuario();
-    return role === 'ADMIN' || role === 'ADMINISTRADOR' || role === 'SUPERVISOR';
+    return role === 'SUPERADMIN' || role === 'ADMIN' || role === 'ADMINISTRADOR' || role === 'SUPERVISOR';
+  }
+
+  esSuperAdmin(): boolean {
+    const role = this.obtenerRolUsuario();
+    return role === 'SUPERADMIN';
   }
 
   esCliente(): boolean {

@@ -20,3 +20,26 @@ export const adminGuard: CanActivateFn = (route, state) => {
   return false;
 };
 
+export const superAdminGuard: CanActivateFn = (route, state) => {
+  const router = inject(Router);
+  const authService = inject(AuthService);
+
+  if (!authService.isAuthenticated()) {
+    router.navigate(['/login']);
+    return false;
+  }
+
+  if (authService.esSuperAdmin()) {
+    return true;
+  }
+
+  // Si es un Admin de Tenant, lo redirigimos a su propio negocio
+  if (authService.isAdmin()) {
+    router.navigate(['/admin/users']);
+    return false;
+  }
+
+  router.navigate(['/catalogo']);
+  return false;
+};
+

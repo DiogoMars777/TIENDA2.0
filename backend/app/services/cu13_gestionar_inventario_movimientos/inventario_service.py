@@ -202,6 +202,7 @@ class InventarioService:
             .filter(
                 InventarioModel.tenant_id == tenant_id,
                 SucursalModel.tenant_id == tenant_id,
+                ProductoModel.tenant_id == tenant_id,
             )
         )
 

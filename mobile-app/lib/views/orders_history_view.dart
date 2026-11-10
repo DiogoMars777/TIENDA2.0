@@ -8,6 +8,8 @@ import 'package:provider/provider.dart';
 import '../controllers/order_controller.dart';
 import '../controllers/auth_controller.dart';
 import '../controllers/payment_controller.dart';
+import '../controllers/product_controller.dart';
+import '../controllers/notification_controller.dart';
 import '../models/order_model.dart';
 import '../widgets/simulated_qr_widget.dart';
 
@@ -27,8 +29,16 @@ class _OrdersHistoryViewState extends State<OrdersHistoryView> {
 
   void _cargarOrdenes() {
     final authCtrl = Provider.of<AuthController>(context, listen: false);
+    final prodCtrl = Provider.of<ProductController>(context, listen: false);
     final token = authCtrl.currentUser?.token;
-    Provider.of<OrderController>(context, listen: false).fetchMisOrdenes(token);
+    Provider.of<OrderController>(context, listen: false).fetchMisOrdenes(
+      token,
+      tenantId: prodCtrl.empresaSeleccionadaId,
+    );
+    Provider.of<NotificationController>(context, listen: false).fetchNotificaciones(
+      token,
+      tenantId: prodCtrl.empresaSeleccionadaId,
+    );
   }
 
   Widget _buildPurchasedItems(List<OrderItemModel> items) {
@@ -162,9 +172,124 @@ class _OrdersHistoryViewState extends State<OrdersHistoryView> {
     );
   }
 
+  void _mostrarNotificacionesModal(BuildContext context) {
+    final notifCtrl = Provider.of<NotificationController>(context, listen: false);
+    final auth = Provider.of<AuthController>(context, listen: false);
+    final prodCtrl = Provider.of<ProductController>(context, listen: false);
+    notifCtrl.fetchNotificaciones(
+      auth.currentUser?.token,
+      tenantId: prodCtrl.empresaSeleccionadaId,
+    );
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return Consumer<NotificationController>(
+          builder: (_, ctrl, __) {
+            return Container(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.notifications_active, color: Colors.indigo),
+                          SizedBox(width: 8),
+                          Text('Notificaciones de Compra (CU19)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                      if (ctrl.notificaciones.isNotEmpty)
+                        TextButton(
+                          onPressed: () => ctrl.marcarTodasLeidas(
+                            auth.currentUser?.token,
+                            tenantId: prodCtrl.empresaSeleccionadaId,
+                          ),
+                          child: const Text('Marcar leídas', style: TextStyle(fontSize: 12)),
+                        ),
+                    ],
+                  ),
+                  const Divider(),
+                  if (ctrl.notificaciones.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.all(30),
+                      child: Center(
+                        child: Text('No tienes notificaciones registradas', style: TextStyle(color: Colors.grey)),
+                      ),
+                    )
+                  else
+                    Flexible(
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: ctrl.notificaciones.length,
+                        itemBuilder: (_, i) {
+                          final n = ctrl.notificaciones[i];
+                          return Container(
+                            margin: const EdgeInsets.symmetric(vertical: 4),
+                            decoration: BoxDecoration(
+                              color: n.leido ? Colors.grey.shade50 : const Color(0xFFF0FDF4),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: n.leido ? Colors.grey.shade200 : Colors.green.shade300,
+                              ),
+                            ),
+                            child: ListTile(
+                              leading: CircleAvatar(
+                                backgroundColor: Colors.green.shade100,
+                                child: Icon(Icons.shopping_bag, color: Colors.green.shade800, size: 20),
+                              ),
+                              title: Text(
+                                n.titulo,
+                                style: TextStyle(
+                                  fontWeight: n.leido ? FontWeight.w600 : FontWeight.w800,
+                                  fontSize: 13,
+                                ),
+                              ),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const SizedBox(height: 2),
+                                  Text(n.mensaje, style: const TextStyle(fontSize: 12)),
+                                  if (n.fecha.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 3),
+                                      child: Text(n.fecha, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                                    ),
+                                ],
+                              ),
+                              onTap: () {
+                                ctrl.marcarLeida(
+                                  n.id,
+                                  auth.currentUser?.token,
+                                  tenantId: prodCtrl.empresaSeleccionadaId,
+                                );
+                                Navigator.pop(ctx);
+                              },
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final orderCtrl = Provider.of<OrderController>(context);
+    final notifCtrl = Provider.of<NotificationController>(context);
+    final ultimaNoLeida = notifCtrl.notificaciones.where((n) => !n.leido).toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -172,8 +297,88 @@ class _OrdersHistoryViewState extends State<OrdersHistoryView> {
         backgroundColor: Colors.indigo,
         foregroundColor: Colors.white,
         elevation: 1,
+        actions: [
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.notifications_none),
+                tooltip: 'Ver Notificaciones (CU19)',
+                onPressed: () => _mostrarNotificacionesModal(context),
+              ),
+              if (notifCtrl.noLeidasCount > 0)
+                Positioned(
+                  right: 6,
+                  top: 6,
+                  child: CircleAvatar(
+                    radius: 8,
+                    backgroundColor: Colors.redAccent,
+                    child: Text(
+                      '${notifCtrl.noLeidasCount}',
+                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
       ),
-      body: RefreshIndicator(
+      body: Column(
+        children: [
+          if (ultimaNoLeida.isNotEmpty)
+            InkWell(
+              onTap: () => _mostrarNotificacionesModal(context),
+              child: Container(
+                width: double.infinity,
+                margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFDCFCE7),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFF22C55E)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.notifications_active, color: Color(0xFF15803D), size: 22),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            ultimaNoLeida.first.titulo,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 13,
+                              color: Color(0xFF14532D),
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            ultimaNoLeida.first.mensaje,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 11.5, color: Color(0xFF166534)),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Ver',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                        color: Color(0xFF15803D),
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          Expanded(
+            child: RefreshIndicator(
         onRefresh: () async => _cargarOrdenes(),
         child: orderCtrl.cargando
             ? const Center(child: CircularProgressIndicator())
@@ -369,6 +574,9 @@ class _OrdersHistoryViewState extends State<OrdersHistoryView> {
                           );
                         },
                       ),
+            ),
+          ),
+        ],
       ),
     );
   }

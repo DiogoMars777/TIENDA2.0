@@ -6,17 +6,17 @@
       <span>Volver al Catálogo</span>
     </button>
     <div class="header-text">
-      <h1 class="page-title">Historial de Mis Compras</h1>
+      <h1 class="page-title">Pedidos Online</h1>
       <p class="page-sub">CU17 - Seguimiento en tiempo real, comprobantes oficiales y registro de pagos</p>
     </div>
     <div class="header-right-actions" style="margin-left: auto; display: flex; gap: 10px; align-items: center;">
-      <button mat-stroked-button routerLink="/mis-reservas">
+      <button mat-stroked-button [routerLink]="isAdminView ? '/admin/mis-reservas' : '/mis-reservas'">
         <mat-icon>receipt_long</mat-icon>
-        <span>Mis Reservas (CU10/17)</span>
+        <span>Reservas (CU10/17)</span>
       </button>
-      <button mat-raised-button color="primary" routerLink="/carrito">
+      <button mat-raised-button color="primary" [routerLink]="isAdminView ? '/admin/carrito' : '/carrito'">
         <mat-icon>shopping_bag</mat-icon>
-        <span>Mi Carrito</span>
+        <span>Carrito</span>
       </button>
     </div>
   </header>

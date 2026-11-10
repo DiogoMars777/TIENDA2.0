@@ -14,6 +14,7 @@ import {
   NuevoTenantRequest,
   CambiarPlanRequest,
   RenovarSuscripcionRequest,
+  AsignarAdminTenantRequest,
   KpiSaaSDTO
 } from '../../models/cu21_administrar_planes_suscripcion_tenants/suscripcion-tenant.model';
 
@@ -62,6 +63,14 @@ export class SuscripcionTenantService {
 
   renovarSuscripcion(tenantId: number, payload: RenovarSuscripcionRequest): Observable<{ exito: boolean; suscripcion: any }> {
     return this.http.post<{ exito: boolean; suscripcion: any }>(`${this.apiUrl}/tenants/${tenantId}/renovar`, payload);
+  }
+
+  asignarAdministradorTenant(tenantId: number, payload: AsignarAdminTenantRequest): Observable<{ exito: boolean; administrador: any }> {
+    return this.http.post<{ exito: boolean; administrador: any }>(`${this.apiUrl}/tenants/${tenantId}/administrador`, payload);
+  }
+
+  obtenerMiPlan(): Observable<{ exito: boolean; tenant: any }> {
+    return this.http.get<{ exito: boolean; tenant: any }>(`${this.apiUrl}/mi-plan`);
   }
 
   // --- KPIS ---

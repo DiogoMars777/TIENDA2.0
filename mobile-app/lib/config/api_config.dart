@@ -9,13 +9,13 @@ import 'package:flutter/foundation.dart';
 
 class ApiConfig {
   /// Cambia a 'true' para conectar la app al backend en Railway en la nube (funciona con datos móviles o cualquier Wi-Fi)
-  static const bool useCloud = true;
+  static const bool useCloud = false;
 
   /// URL de producción en Railway
   static const String cloudBaseUrl = 'https://tienda-production-3fc5.up.railway.app/api/v1';
 
   /// Dirección IP de tu PC en la red local Wi-Fi para desarrollo local
-  static const String pcLocalIp = '192.168.0.106';
+  static const String pcLocalIp = '192.168.100.161';
 
   /// Retorna la URL base correspondiente según el dispositivo de ejecución
   static String get baseUrl {

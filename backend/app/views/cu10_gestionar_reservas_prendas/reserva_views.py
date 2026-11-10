@@ -47,6 +47,10 @@ def get_current_user_id(
                 UsuarioModel.email == email,
                 UsuarioModel.tenant_id == tenant_id
             ).first()
+            if not user:
+                user = db.query(UsuarioModel).filter(
+                    UsuarioModel.email == email
+                ).first()
             if user:
                 return user.id
 

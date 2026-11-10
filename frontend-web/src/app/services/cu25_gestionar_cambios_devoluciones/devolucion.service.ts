@@ -42,10 +42,12 @@ export class DevolucionService {
 
   /**
    * Valida si una venta califica para cambio dentro del plazo de garantía (15 días).
+   * Acepta tanto el Código de Venta (ej: VTA-SYNC-REC-OFF-...) como el ID numérico.
    */
-  validarVenta(ventaId: number, plazoDias: number = 15): Observable<ValidarVentaDevolucionResponse> {
+  validarVenta(ventaIdOrCodigo: string | number, plazoDias: number = 15): Observable<ValidarVentaDevolucionResponse> {
     const params = new HttpParams().set('plazo_dias', plazoDias.toString());
-    return this.http.get<ValidarVentaDevolucionResponse>(`${this.apiUrl}/validar-venta/${ventaId}`, { params });
+    const cleanRef = encodeURIComponent(String(ventaIdOrCodigo).trim());
+    return this.http.get<ValidarVentaDevolucionResponse>(`${this.apiUrl}/validar-venta/${cleanRef}`, { params });
   }
 
   /**

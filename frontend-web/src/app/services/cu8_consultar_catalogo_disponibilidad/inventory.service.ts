@@ -25,6 +25,9 @@ const CACHE_SUCURSALES_KEY = 'cu08_sucursales_cache';
 export class InventoryService {
   private baseUrl = `${environment.apiUrl}/inventario`;
 
+  // Simulador global de modo offline para pruebas de PWA/Móvil sin apagar el servidor
+  private modoOfflineSimulado = false;
+
   // Estado reactivo de conectividad y frescura de datos (CU08 Offline)
   private datosDesactualizadosSubject = new BehaviorSubject<boolean>(false);
   public datosDesactualizados$: Observable<boolean> = this.datosDesactualizadosSubject.asObservable();
@@ -38,7 +41,9 @@ export class InventoryService {
   constructor(private http: HttpClient) {
     if (typeof window !== 'undefined') {
       window.addEventListener('online', () => {
-        this.offlineModeSubject.next(false);
+        if (!this.modoOfflineSimulado) {
+          this.offlineModeSubject.next(false);
+        }
       });
       window.addEventListener('offline', () => {
         this.offlineModeSubject.next(true);
@@ -47,9 +52,32 @@ export class InventoryService {
     }
   }
 
+  private getCatalogoKey(): string {
+    const tenantId = localStorage.getItem('tenant_id') || '1';
+    return `${CACHE_CATALOGO_KEY}_tenant_${tenantId}`;
+  }
+
+  private getSucursalesKey(): string {
+    const tenantId = localStorage.getItem('tenant_id') || '1';
+    return `${CACHE_SUCURSALES_KEY}_tenant_${tenantId}`;
+  }
+
+  public isOffline(): boolean {
+    return this.modoOfflineSimulado || !navigator.onLine;
+  }
+
+  public toggleModoOfflineSimulado(forzar?: boolean): boolean {
+    this.modoOfflineSimulado = forzar !== undefined ? forzar : !this.modoOfflineSimulado;
+    const activo = this.isOffline();
+    this.offlineModeSubject.next(activo);
+    this.datosDesactualizadosSubject.next(activo);
+    return this.modoOfflineSimulado;
+  }
+
   private getStoredTimestamp(): string | null {
     try {
-      const cached = localStorage.getItem(CACHE_CATALOGO_KEY);
+      const tenantId = localStorage.getItem('tenant_id') || '1';
+      const cached = localStorage.getItem(`${CACHE_CATALOGO_KEY}_tenant_${tenantId}`);
       if (cached) {
         const parsed = JSON.parse(cached) as CatalogoCacheLocal;
         return parsed.timestamp || null;
@@ -61,10 +89,10 @@ export class InventoryService {
   }
 
   /**
-   * Obtiene la lista de sucursales físicas activas con soporte offline
+   * Obtiene la lista de sucursales físicas activas con soporte offline por tenant
    */
   obtenerSucursales(): Observable<SucursalItem[]> {
-    if (!navigator.onLine) {
+    if (this.isOffline()) {
       const cached = this.getCachedSucursales();
       if (cached.length > 0) {
         this.datosDesactualizadosSubject.next(true);
@@ -75,7 +103,7 @@ export class InventoryService {
     return this.http.get<SucursalItem[]>(`${this.baseUrl}/sucursales`).pipe(
       tap((sucursales) => {
         try {
-          localStorage.setItem(CACHE_SUCURSALES_KEY, JSON.stringify(sucursales));
+          localStorage.setItem(this.getSucursalesKey(), JSON.stringify(sucursales));
         } catch (e) {
           console.warn('[CU08 CACHE] No se pudo guardar sucursales en localStorage:', e);
         }
@@ -103,8 +131,8 @@ export class InventoryService {
     search?: string | null,
     soloDisponibles: boolean = false
   ): Observable<ProductoCatalogoItem[]> {
-    // Si el navegador no tiene conexión a internet, recurrir inmediatamente a caché
-    if (!navigator.onLine) {
+    // Si el dispositivo está en modo offline (real o simulado), recurrir inmediatamente a la base local
+    if (this.isOffline()) {
       console.warn('[CU08 OFFLINE] Dispositivo sin conexión. Cargando catálogo guardado localmente.');
       this.offlineModeSubject.next(true);
       this.datosDesactualizadosSubject.next(true);
@@ -126,7 +154,7 @@ export class InventoryService {
         const timestamp = new Date().toISOString();
         this.ultimaSincronizacionSubject.next(timestamp);
 
-        // Guardar catálogo en caché local sólo si es consulta global o sin filtros restrictivos
+        // Guardar catálogo en caché local del tenant
         if (!search && (!genero || genero === 'TODOS') && !soloDisponibles) {
           try {
             const cacheObj: CatalogoCacheLocal = {
@@ -134,7 +162,7 @@ export class InventoryService {
               sucursalId,
               items
             };
-            localStorage.setItem(CACHE_CATALOGO_KEY, JSON.stringify(cacheObj));
+            localStorage.setItem(this.getCatalogoKey(), JSON.stringify(cacheObj));
           } catch (e) {
             console.warn('[CU08 CACHE] No se pudo guardar catálogo en localStorage:', e);
           }
@@ -181,10 +209,21 @@ export class InventoryService {
 
   // --- MÉTODOS AUXILIARES DE CACHÉ OFFLINE ---
 
-  private getCachedSucursales(): SucursalItem[] {
+  public getCachedSucursales(): SucursalItem[] {
     try {
-      const data = localStorage.getItem(CACHE_SUCURSALES_KEY);
+      const data = localStorage.getItem(this.getSucursalesKey());
       return data ? JSON.parse(data) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  public getCachedCatalogoItems(): ProductoCatalogoItem[] {
+    try {
+      const cached = localStorage.getItem(this.getCatalogoKey());
+      if (!cached) return [];
+      const cacheObj = JSON.parse(cached) as CatalogoCacheLocal;
+      return cacheObj.items || [];
     } catch {
       return [];
     }
@@ -198,10 +237,7 @@ export class InventoryService {
     soloDisponibles: boolean = false
   ): ProductoCatalogoItem[] {
     try {
-      const cached = localStorage.getItem(CACHE_CATALOGO_KEY);
-      if (!cached) return [];
-      const cacheObj = JSON.parse(cached) as CatalogoCacheLocal;
-      let items = cacheObj.items || [];
+      let items = this.getCachedCatalogoItems();
 
       if (categoriaId) {
         items = items.filter(p => p.categoria_id === categoriaId);

@@ -62,10 +62,10 @@ def solicitar_devolucion(
 @router.get(
     "/validar-venta/{venta_id}",
     response_model=ValidarVentaDevolucionResponse,
-    summary="Validar si una venta califica para cambio/devolución dentro del plazo"
+    summary="Validar si una venta califica para cambio/devolución dentro del plazo (por ID o Código de Venta)"
 )
 def validar_venta(
-    venta_id: int,
+    venta_id: str,
     plazo_dias: int = Query(15, ge=1, le=90),
     db: Session = Depends(get_db),
     current_user: UsuarioModel = Depends(get_current_user)

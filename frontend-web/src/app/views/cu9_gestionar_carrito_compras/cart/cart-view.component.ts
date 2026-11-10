@@ -65,6 +65,7 @@ export class CartViewComponent implements OnInit {
   // CU18: Recomendaciones Stylist IA
   recomendaciones: RecomendacionOutfitDTO[] = [];
   cargandoRecomendaciones = false;
+  isAdminView = false;
 
   constructor(
     private cartService: CartService,
@@ -75,7 +76,9 @@ export class CartViewComponent implements OnInit {
     private recomendacionService: RecomendacionService,
     private router: Router,
     private route: ActivatedRoute
-  ) {}
+  ) {
+    this.isAdminView = this.router.url.startsWith('/admin');
+  }
 
   ngOnInit(): void {
     // 1. Cargar tiendas físicas
@@ -162,7 +165,7 @@ export class CartViewComponent implements OnInit {
   }
 
   agregarRecomendado(rec: RecomendacionOutfitDTO): void {
-    this.router.navigate(['/catalogo'], { queryParams: { q: rec.nombre } });
+    this.router.navigate([this.isAdminView ? '/admin/catalogo' : '/catalogo'], { queryParams: { q: rec.nombre } });
   }
 
   incrementar(item: CarritoItem): void {
@@ -269,7 +272,7 @@ export class CartViewComponent implements OnInit {
 
   irAMisReservas(): void {
     this.mostrarModalReserva = false;
-    this.router.navigate(['/mis-reservas']);
+    this.router.navigate([this.isAdminView ? '/admin/mis-reservas' : '/mis-reservas']);
   }
 
   // --- CU15: Métodos para Compra Digital con Envío a Domicilio ---
@@ -360,7 +363,7 @@ export class CartViewComponent implements OnInit {
   irAMisPedidos(): void {
     this.mostrarModalCompra = false;
     this.mostrarModalQR = false;
-    this.router.navigate(['/mis-pedidos']);
+    this.router.navigate([this.isAdminView ? '/admin/mis-pedidos' : '/mis-pedidos']);
   }
 }
 

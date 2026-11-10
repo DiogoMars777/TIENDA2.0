@@ -52,8 +52,8 @@ from app.models.cu13_gestionar_inventario_movimientos.inventario_model import (
 
 # CU14 - Ventas Presenciales, Pagos y Recibos
 from app.models.cu14_registrar_ventas_presenciales.venta_presencial_model import (
-    Venta, DetalleVenta, MetodoPago, Pago, Recibo,
-    VentaModel, DetalleVentaModel, MetodoPagoModel, PagoModel, ReciboModel,
+    Venta, DetalleVenta, MetodoPago, Pago, Recibo, ComprobantePago,
+    VentaModel, DetalleVentaModel, MetodoPagoModel, PagoModel, ReciboModel, ComprobantePagoModel,
     venta, detalle_venta, metodo_pago, pago, recibo
 )
 
@@ -78,7 +78,7 @@ from app.models.cu19_gestionar_notificaciones.notificacion_model import (
 
 # CU20 - Reportes Generativos con IA
 from app.models.cu20_generar_reportes_generativos_ia.reporte_generativo_model import (
-    ReporteGenerativoIA, ReporteGenerativoModel, reporte_generativo
+    ReporteGenerativoIA, ReporteGenerativo, ReporteGenerativoModel, reporte_generativo
 )
 
 # CU21 - Planes de Suscripción y Tenants

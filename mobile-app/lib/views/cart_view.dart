@@ -6,6 +6,7 @@
 
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../controllers/cart_controller.dart';
 import '../controllers/auth_controller.dart';
@@ -14,6 +15,7 @@ import '../controllers/payment_controller.dart';
 import '../controllers/recommendation_controller.dart';
 import '../controllers/notification_controller.dart';
 import '../controllers/product_controller.dart';
+import '../controllers/order_controller.dart';
 import '../widgets/simulated_qr_widget.dart';
 import 'my_reservations_view.dart';
 import 'orders_history_view.dart';
@@ -45,9 +47,14 @@ class _CartViewState extends State<CartView> {
   @override
   Widget build(BuildContext context) {
     final cartCtrl = Provider.of<CartController>(context);
+    final productCtrl = Provider.of<ProductController>(context);
     final authCtrl = Provider.of<AuthController>(context, listen: false);
     final resCtrl = Provider.of<ReservationController>(context, listen: false);
     final payCtrl = Provider.of<PaymentController>(context, listen: false);
+    final sucursalActivaNombre =
+        cartCtrl.sucursalNombre ?? productCtrl.sucursalActual?.nombre ?? 'Sucursal Central';
+    final sucursalActivaId =
+        cartCtrl.sucursalId ?? productCtrl.sucursalSeleccionadaId ?? productCtrl.sucursalActual?.id ?? 1;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
@@ -385,7 +392,7 @@ class _CartViewState extends State<CartView> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Selector de Sucursal para Retiro / Reserva
+                      // Selector de Sucursal para Retiro / Reserva (Dinámico por Empresa)
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         margin: const EdgeInsets.only(bottom: 12),
@@ -402,34 +409,35 @@ class _CartViewState extends State<CartView> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Text(
-                                    'SUCURSAL SELECCIONADA',
-                                    style: TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.w700, letterSpacing: 0.5),
+                                  Text(
+                                    'SUCURSAL DE RETIRO (${productCtrl.empresaActual.nombre.toUpperCase()})',
+                                    style: const TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.w700, letterSpacing: 0.5),
                                   ),
                                   Text(
-                                    cartCtrl.sucursalNombre ?? 'Sucursal Central (Principal)',
+                                    sucursalActivaNombre,
                                     style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
                                   ),
                                 ],
                               ),
                             ),
-                            PopupMenuButton<int>(
-                              tooltip: 'Cambiar Sucursal',
-                              icon: const Icon(Icons.swap_horiz, color: Color(0xFF0F172A)),
-                              onSelected: (id) {
-                                final sucursales = {
-                                  1: 'Sucursal Central (Principal)',
-                                  2: 'Sucursal Equipetrol',
-                                  3: 'Sucursal Norte',
-                                };
-                                cartCtrl.setSucursal(id, sucursales[id] ?? 'Sucursal #$id');
-                              },
-                              itemBuilder: (ctx) => const [
-                                PopupMenuItem(value: 1, child: Text('Sucursal Central (Principal)')),
-                                PopupMenuItem(value: 2, child: Text('Sucursal Equipetrol')),
-                                PopupMenuItem(value: 3, child: Text('Sucursal Norte')),
-                              ],
-                            ),
+                            if (productCtrl.sucursales.isNotEmpty)
+                              PopupMenuButton<int>(
+                                tooltip: 'Cambiar Sucursal',
+                                icon: const Icon(Icons.swap_horiz, color: Color(0xFF0F172A)),
+                                onSelected: (id) {
+                                  final suc = productCtrl.sucursales.where((s) => s.id == id).toList();
+                                  if (suc.isNotEmpty) {
+                                    cartCtrl.setSucursal(id, suc.first.nombre);
+                                    productCtrl.seleccionarSucursal(id);
+                                  }
+                                },
+                                itemBuilder: (ctx) => productCtrl.sucursales
+                                    .map((s) => PopupMenuItem<int>(
+                                          value: s.id,
+                                          child: Text(s.nombre),
+                                        ))
+                                    .toList(),
+                              ),
                           ],
                         ),
                       ),
@@ -489,14 +497,10 @@ class _CartViewState extends State<CartView> {
                           label: const Text('Pagar', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                           onPressed: () async {
                             if (!authCtrl.isAuthenticated) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Inicia sesión para confirmar tu compra digital.'),
-                                  backgroundColor: Colors.orange,
-                                ),
+                              await authCtrl.loginInvitadoEmpresa(
+                                tenantId: productCtrl.empresaSeleccionadaId,
+                                empresaNombre: productCtrl.empresaActual.nombre,
                               );
-                              Navigator.pushNamed(context, '/login');
-                              return;
                             }
 
                             // Extraer datos de la compra antes de procesar
@@ -515,6 +519,8 @@ class _CartViewState extends State<CartView> {
                               "Av. Principal #123, Santa Cruz",
                               authToken: authCtrl.currentUser?.token,
                               metodoId: _metodoPagoSeleccionado,
+                              sucursalIdOverride: sucursalActivaId,
+                              tenantId: productCtrl.empresaSeleccionadaId,
                             );
 
                             if (!context.mounted) return;
@@ -523,6 +529,29 @@ class _CartViewState extends State<CartView> {
                             if (order != null && order['id'] != null) {
                               final ventaId = order['id'] as int;
                               final codigoVenta = order['codigoventa'] ?? 'ORD-$ventaId';
+
+                              // Registrar orden y notificación inmediatamente en el móvil
+                              try {
+                                final orderCtrl = Provider.of<OrderController>(context, listen: false);
+                                await orderCtrl.registrarOrdenLocal(
+                                  order,
+                                  tenantId: productCtrl.empresaSeleccionadaId,
+                                );
+                                final notifCtrl = Provider.of<NotificationController>(context, listen: false);
+                                final metodoLabel = _metodoPagoSeleccionado == 5
+                                    ? 'PayPal'
+                                    : (_metodoPagoSeleccionado == 2 ? 'Tarjeta Visa' : 'QR Simple');
+                                await notifCtrl.agregarNotificacion(
+                                  titulo: '🛍️ ¡Compra Realizada! #$codigoVenta',
+                                  mensaje:
+                                      'Compra registrada en ${productCtrl.empresaActual.nombre}: $resumenPrendas por Bs. ${totalCompra.toStringAsFixed(2)} ($metodoLabel).',
+                                  tipo: 'COMPRA_EXITOSA',
+                                  enlace: '/mis-pedidos',
+                                  tenantId: productCtrl.empresaSeleccionadaId,
+                                );
+                                HapticFeedback.mediumImpact();
+                              } catch (_) {}
+
                               final pagoInfo = await payCtrl.iniciarPago(
                                 ventaId: ventaId,
                                 metodoId: _metodoPagoSeleccionado,
@@ -552,35 +581,43 @@ class _CartViewState extends State<CartView> {
 
                       const SizedBox(height: 10),
 
-                      // Botón 2: Reservar en Sucursal Física (CU10)
+                      // Botón 2: Reservar en Sucursal Física (CU10 - Funciona Con y Sin Internet)
                       SizedBox(
                         width: double.infinity,
-                        height: 46,
-                        child: OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFF0F172A),
-                            side: const BorderSide(color: Color(0xFF0F172A), width: 1.5),
+                        height: 48,
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: productCtrl.usandoCacheOffline
+                                ? const Color(0xFFD97706)
+                                : const Color(0xFF0F172A),
+                            foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                           ),
-                          icon: const Icon(Icons.storefront),
-                          label: const Text('Apartar y Pagar en Tienda (CU10)', style: TextStyle(fontWeight: FontWeight.bold)),
+                          icon: Icon(productCtrl.usandoCacheOffline ? Icons.wifi_off : Icons.storefront),
+                          label: Text(
+                            productCtrl.usandoCacheOffline
+                                ? 'Guardar Reserva Offline (Sin Internet)'
+                                : 'Apartar y Pagar en Tienda (CU10)',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
                           onPressed: () async {
                             if (!authCtrl.isAuthenticated) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Inicia sesión para apartar tus prendas en tienda.'),
-                                  backgroundColor: Colors.orange,
-                                ),
+                              await authCtrl.loginInvitadoEmpresa(
+                                tenantId: productCtrl.empresaSeleccionadaId,
+                                empresaNombre: productCtrl.empresaActual.nombre,
                               );
-                              Navigator.pushNamed(context, '/login');
-                              return;
                             }
 
-                            // Extraer prendas para el apartado
+                            // Extraer prendas completas para el apartado (Online u Offline)
                             final itemsPayload = cartCtrl.items.values.map((it) => {
                               'producto_id': it.product.id,
-                              'variante_id': it.product.varianteId,
+                              'variante_id': it.product.varianteId ?? 0,
                               'cantidad': it.cantidad,
+                              'producto_nombre': it.product.nombre,
+                              'talla': it.product.tallaSeleccionada ?? 'M',
+                              'color': it.product.colorSeleccionado ?? 'Estándar',
+                              'precio_unitario': it.product.precio,
+                              'imagen_url': it.product.imagenUrl,
                             }).toList();
                             final nombresPrendas = cartCtrl.items.values.map((it) => it.product.nombre).toList();
                             final String resumenPrendas = nombresPrendas.take(2).join(', ') +
@@ -593,7 +630,12 @@ class _CartViewState extends State<CartView> {
                             );
 
                             final nuevaReserva = await resCtrl.crearReservaDesdeCarrito(
-                              sucursalId: cartCtrl.sucursalId,
+                              sucursalId: sucursalActivaId,
+                              sucursalNombre: sucursalActivaNombre,
+                              sucursalDireccion: productCtrl.sucursalActual?.direccion,
+                              tenantId: productCtrl.empresaSeleccionadaId,
+                              empresaNombre: productCtrl.empresaActual.nombre,
+                              forzarOffline: productCtrl.modoOfflineSimulado,
                               items: itemsPayload,
                               token: authCtrl.currentUser?.token,
                             );
@@ -602,21 +644,27 @@ class _CartViewState extends State<CartView> {
                             Navigator.pop(context); // Cerrar loading
 
                             if (nuevaReserva != null) {
-                              // Refrescar catálogo móvil de inmediato para actualizar stock apartado
-                              try {
-                                context.read<ProductController>().fetchCatalogoConDisponibilidad(forceRefresh: true);
-                              } catch (_) {}
+                              if (!nuevaReserva.esOffline) {
+                                try {
+                                  context.read<ProductController>().fetchCatalogoConDisponibilidad(forceRefresh: true);
+                                } catch (_) {}
+                              }
 
                               // Notificación inmediata en móvil
                               try {
                                 final notifCtrl = Provider.of<NotificationController>(context, listen: false);
-                                notifCtrl.agregarNotificacion(
-                                  titulo: '🏪 ¡Apartado en Tienda! #${nuevaReserva.codigoReserva}',
-                                  mensaje: 'Has apartado exitosamente: $resumenPrendas. Código de retiro: #${nuevaReserva.codigoReserva}. Presenta este código en caja para abonar y retirar tus prendas.',
+                                await notifCtrl.agregarNotificacion(
+                                  titulo: nuevaReserva.esOffline
+                                      ? '📡 Reserva Offline Guardada #${nuevaReserva.codigoReserva}'
+                                      : '🏪 ¡Apartado en Tienda! #${nuevaReserva.codigoReserva}',
+                                  mensaje: nuevaReserva.esOffline
+                                      ? 'Se guardó tu reserva de $resumenPrendas en la base local de tu teléfono. Se sincronizará automáticamente al reconectar internet.'
+                                      : 'Has apartado exitosamente: $resumenPrendas. Código de retiro: #${nuevaReserva.codigoReserva}.',
                                   tipo: 'RESERVA_EXITOSA',
                                   enlace: '/mis-reservas',
+                                  tenantId: productCtrl.empresaSeleccionadaId,
                                 );
-                                notifCtrl.fetchNotificaciones(authCtrl.currentUser?.token);
+                                HapticFeedback.mediumImpact();
                               } catch (_) {}
 
                               cartCtrl.limpiarCarrito();
@@ -624,46 +672,68 @@ class _CartViewState extends State<CartView> {
                                 context: context,
                                 builder: (ctx) => AlertDialog(
                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                                  title: const Row(
+                                  title: Row(
                                     children: [
-                                      Icon(Icons.check_circle, color: Colors.green),
-                                      SizedBox(width: 8),
-                                      Text('¡Apartado Exitoso!', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                                      Icon(
+                                        nuevaReserva.esOffline ? Icons.cloud_upload : Icons.check_circle,
+                                        color: nuevaReserva.esOffline ? Colors.amber.shade800 : Colors.green,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          nuevaReserva.esOffline
+                                              ? '¡Reserva Offline Guardada!'
+                                              : '¡Apartado Exitoso!',
+                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+                                        ),
+                                      ),
                                     ],
                                   ),
                                   content: Column(
                                     mainAxisSize: MainAxisSize.min,
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      const Text(
-                                        'Código de Retiro en Tienda:',
-                                        style: TextStyle(color: Colors.black54, fontSize: 12),
+                                      Text(
+                                        nuevaReserva.esOffline
+                                            ? 'Código Temporal Offline (${productCtrl.empresaActual.nombre}):'
+                                            : 'Código de Retiro en Tienda (${productCtrl.empresaActual.nombre}):',
+                                        style: const TextStyle(color: Colors.black54, fontSize: 12),
                                       ),
                                       const SizedBox(height: 6),
                                       Container(
                                         width: double.infinity,
                                         padding: const EdgeInsets.symmetric(vertical: 12),
                                         decoration: BoxDecoration(
-                                          color: const Color(0xFFEFF6FF),
+                                          color: nuevaReserva.esOffline
+                                              ? const Color(0xFFFEF3C7)
+                                              : const Color(0xFFEFF6FF),
                                           borderRadius: BorderRadius.circular(8),
-                                          border: Border.all(color: const Color(0xFFBFDBFE)),
+                                          border: Border.all(
+                                            color: nuevaReserva.esOffline
+                                                ? const Color(0xFFF59E0B)
+                                                : const Color(0xFFBFDBFE),
+                                          ),
                                         ),
                                         child: Text(
                                           nuevaReserva.codigoReserva,
                                           textAlign: TextAlign.center,
-                                          style: const TextStyle(
-                                            color: Color(0xFF1E3A8A),
-                                            fontSize: 26,
+                                          style: TextStyle(
+                                            color: nuevaReserva.esOffline
+                                                ? const Color(0xFF92400E)
+                                                : const Color(0xFF1E3A8A),
+                                            fontSize: 23,
                                             fontWeight: FontWeight.w900,
-                                            letterSpacing: 2,
+                                            letterSpacing: 1.5,
                                             fontFamily: 'monospace',
                                           ),
                                         ),
                                       ),
                                       const SizedBox(height: 12),
-                                      const Text(
-                                        'Tus prendas han quedado reservadas en inventario. Presenta este código en caja al visitar la sucursal para cancelar y retirar.',
-                                        style: TextStyle(color: Colors.black87, fontSize: 13),
+                                      Text(
+                                        nuevaReserva.esOffline
+                                            ? 'Tu reserva se guardó en la memoria local de tu teléfono porque no tienes internet. En cuanto actives tu Wi-Fi o datos móviles, se sincronizará automáticamente con la tienda.'
+                                            : 'Tus prendas han quedado reservadas en inventario. Presenta este código en caja al visitar la sucursal para cancelar y retirar.',
+                                        style: const TextStyle(color: Colors.black87, fontSize: 13),
                                       ),
                                     ],
                                   ),
@@ -832,13 +902,18 @@ class _CartViewState extends State<CartView> {
               try {
                 final notifCtrl = Provider.of<NotificationController>(context, listen: false);
                 final authCtrl = Provider.of<AuthController>(context, listen: false);
-                notifCtrl.agregarNotificacion(
+                final prodCtrl = Provider.of<ProductController>(context, listen: false);
+                await notifCtrl.agregarNotificacion(
                   titulo: '🛍️ ¡Compra Realizada! #$codigoVenta',
                   mensaje: 'Has comprado exitosamente: $resumenPrendas. Total: Bs. ${totalCompra.toStringAsFixed(2)} (\$$montoUsd USD). Abriendo pasarela PayPal.',
                   tipo: 'COMPRA_EXITOSA',
                   enlace: '/mis-pedidos',
+                  tenantId: prodCtrl.empresaSeleccionadaId,
                 );
-                notifCtrl.fetchNotificaciones(authCtrl.currentUser?.token);
+                await notifCtrl.fetchNotificaciones(
+                  authCtrl.currentUser?.token,
+                  tenantId: prodCtrl.empresaSeleccionadaId,
+                );
               } catch (_) {}
 
               await payCtrl.abrirPayPal(paypalUrl);
@@ -972,26 +1047,32 @@ class _CartViewState extends State<CartView> {
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
-            onPressed: () {
+            onPressed: () async {
               // Disparar notificación oficial de compra realizada por QR
               try {
                 final notifCtrl = Provider.of<NotificationController>(context, listen: false);
                 final authCtrl = Provider.of<AuthController>(context, listen: false);
-                notifCtrl.agregarNotificacion(
+                final prodCtrl = Provider.of<ProductController>(context, listen: false);
+                await notifCtrl.agregarNotificacion(
                   titulo: '🛍️ ¡Compra Realizada! #$codigoVenta',
                   mensaje: 'Has comprado exitosamente: $resumenPrendas. Transferencia QR de Bs. ${totalCompra.toStringAsFixed(2)} confirmada y en preparación.',
                   tipo: 'COMPRA_EXITOSA',
                   enlace: '/mis-pedidos',
+                  tenantId: prodCtrl.empresaSeleccionadaId,
                 );
-                notifCtrl.fetchNotificaciones(authCtrl.currentUser?.token);
+                await notifCtrl.fetchNotificaciones(
+                  authCtrl.currentUser?.token,
+                  tenantId: prodCtrl.empresaSeleccionadaId,
+                );
               } catch (_) {}
 
+              if (!context.mounted) return;
               Navigator.pop(ctx);
               Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const OrdersHistoryView()));
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('¡Pago QR verificado y aprobado! Tu pedido ya está registrado.'),
-                  backgroundColor: Colors.green,
+                SnackBar(
+                  content: Text('🔔 Notificación recibida: Compra #$codigoVenta confirmada por QR.'),
+                  backgroundColor: Colors.green.shade800,
                 ),
               );
             },
@@ -1191,23 +1272,29 @@ class _CartViewState extends State<CartView> {
                   try {
                     final notifCtrl = Provider.of<NotificationController>(context, listen: false);
                     final authCtrl = Provider.of<AuthController>(context, listen: false);
-                    notifCtrl.agregarNotificacion(
+                    final prodCtrl = Provider.of<ProductController>(context, listen: false);
+                    await notifCtrl.agregarNotificacion(
                       titulo: '🛍️ ¡Compra Realizada! #$codigoVenta',
                       mensaje: 'Has comprado exitosamente: $resumenPrendas. Pago de Bs. ${totalCompra.toStringAsFixed(2)} aprobado con tarjeta Visa terminada en 7820.',
                       tipo: 'COMPRA_EXITOSA',
                       enlace: '/mis-pedidos',
+                      tenantId: prodCtrl.empresaSeleccionadaId,
                     );
-                    notifCtrl.fetchNotificaciones(authCtrl.currentUser?.token);
+                    await notifCtrl.fetchNotificaciones(
+                      authCtrl.currentUser?.token,
+                      tenantId: prodCtrl.empresaSeleccionadaId,
+                    );
                   } catch (_) {}
 
+                  if (!context.mounted) return;
                   Navigator.pushReplacement(
                     context,
                     MaterialPageRoute(builder: (_) => const OrdersHistoryView()),
                   );
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('¡Pago con tarjeta Visa aprobado y verificado exitosamente!'),
-                      backgroundColor: Colors.green,
+                    SnackBar(
+                      content: Text('🔔 Notificación recibida: Compra #$codigoVenta aprobada con Visa.'),
+                      backgroundColor: Colors.green.shade800,
                     ),
                   );
                 },

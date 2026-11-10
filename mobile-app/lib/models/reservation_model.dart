@@ -1,6 +1,6 @@
 // ==============================================================================
 // CAPA MODELO (MVC - MODEL EN FLUTTER / DART)
-// Módulo: CU10 - Gestionar Reservas de Prendas
+// Módulo: CU10 - Gestionar Reservas de Prendas (Con Soporte Offline-First)
 // Ubicación: mobile-app/lib/models/reservation_model.dart
 // ==============================================================================
 
@@ -18,6 +18,7 @@ int _parseInt(dynamic value, [int defaultValue = 0]) {
 
 class ReservaDetalleItem {
   final int varianteId;
+  final int? productoId;
   final String productoNombre;
   final String? talla;
   final String? color;
@@ -28,6 +29,7 @@ class ReservaDetalleItem {
 
   ReservaDetalleItem({
     required this.varianteId,
+    this.productoId,
     required this.productoNombre,
     this.talla,
     this.color,
@@ -40,6 +42,7 @@ class ReservaDetalleItem {
   factory ReservaDetalleItem.fromJson(Map<String, dynamic> json) {
     return ReservaDetalleItem(
       varianteId: _parseInt(json['variante_id'] ?? json['id']),
+      productoId: json['producto_id'] != null ? _parseInt(json['producto_id']) : null,
       productoNombre: json['producto_nombre']?.toString() ?? json['producto']?.toString() ?? 'Prenda',
       talla: json['talla']?.toString(),
       color: json['color']?.toString(),
@@ -49,6 +52,20 @@ class ReservaDetalleItem {
       subtotal: _parseDouble(json['subtotal']),
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'variante_id': varianteId,
+      'producto_id': productoId,
+      'producto_nombre': productoNombre,
+      'talla': talla,
+      'color': color,
+      'imagen_url': imagenUrl,
+      'precio_unitario': precioUnitario,
+      'cantidad': cantidad,
+      'subtotal': subtotal,
+    };
+  }
 }
 
 class ReservaModel {
@@ -57,8 +74,12 @@ class ReservaModel {
   final String fechaReserva;
   final String estado;
   final String? observaciones;
+  final int? sucursalId;
   final String? sucursalNombre;
   final String? sucursalDireccion;
+  final int? tenantId;
+  final String? empresaNombre;
+  final bool esOffline;
   final List<ReservaDetalleItem> detalles;
   final int totalItems;
   final double totalEstimado;
@@ -69,8 +90,12 @@ class ReservaModel {
     required this.fechaReserva,
     required this.estado,
     this.observaciones,
+    this.sucursalId,
     this.sucursalNombre,
     this.sucursalDireccion,
+    this.tenantId,
+    this.empresaNombre,
+    this.esOffline = false,
     required this.detalles,
     required this.totalItems,
     required this.totalEstimado,
@@ -80,19 +105,45 @@ class ReservaModel {
     var sucursal = json['sucursal'];
     var rawDetalles = json['detalles'] as List? ?? json['items'] as List? ?? [];
     List<ReservaDetalleItem> detallesList =
-        rawDetalles.map((d) => ReservaDetalleItem.fromJson(d)).toList();
+        rawDetalles.map((d) => ReservaDetalleItem.fromJson(Map<String, dynamic>.from(d))).toList();
+
+    final codigo = json['codigo_reserva']?.toString() ?? '';
+    final isOff = (json['es_offline'] == true) || codigo.startsWith('RES-OFF-');
 
     return ReservaModel(
       id: _parseInt(json['id']),
-      codigoReserva: json['codigo_reserva']?.toString() ?? '',
+      codigoReserva: codigo,
       fechaReserva: json['fecha_reserva']?.toString() ?? '',
       estado: json['estado']?.toString() ?? 'PENDIENTE',
       observaciones: json['observaciones']?.toString(),
+      sucursalId: sucursal != null ? _parseInt(sucursal['id']) : (json['sucursal_id'] != null ? _parseInt(json['sucursal_id']) : null),
       sucursalNombre: sucursal != null ? sucursal['nombre']?.toString() : json['sucursal_nombre']?.toString(),
       sucursalDireccion: sucursal != null ? sucursal['direccion']?.toString() : json['sucursal_direccion']?.toString(),
+      tenantId: json['tenant_id'] != null ? _parseInt(json['tenant_id']) : null,
+      empresaNombre: json['empresa_nombre']?.toString(),
+      esOffline: isOff,
       detalles: detallesList,
-      totalItems: _parseInt(json['total_items'] ?? detallesList.length),
+      totalItems: _parseInt(json['total_items'] ?? detallesList.fold<int>(0, (s, d) => s + d.cantidad)),
       totalEstimado: _parseDouble(json['total_estimado']),
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'codigo_reserva': codigoReserva,
+      'fecha_reserva': fechaReserva,
+      'estado': estado,
+      'observaciones': observaciones,
+      'sucursal_id': sucursalId,
+      'sucursal_nombre': sucursalNombre,
+      'sucursal_direccion': sucursalDireccion,
+      'tenant_id': tenantId,
+      'empresa_nombre': empresaNombre,
+      'es_offline': esOffline,
+      'detalles': detalles.map((d) => d.toJson()).toList(),
+      'total_items': totalItems,
+      'total_estimado': totalEstimado,
+    };
   }
 }

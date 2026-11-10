@@ -91,12 +91,17 @@ export class SincronizacionOfflineService {
   }
 
   // ============================================================================
-  // GESTIÓN DE COLA LOCAL (OFFLINE LOCALSTORAGE CACHE)
+  // GESTIÓN DE COLA LOCAL (OFFLINE LOCALSTORAGE CACHE POR TENANT)
   // ============================================================================
+
+  private getStorageKey(): string {
+    const tenantId = localStorage.getItem('tenant_id') || '1';
+    return `shopyn_contingencia_cobros_offline_tenant_${tenantId}`;
+  }
 
   obtenerColaLocal(): any[] {
     try {
-      const data = localStorage.getItem(this.LOCAL_STORAGE_KEY);
+      const data = localStorage.getItem(this.getStorageKey());
       return data ? JSON.parse(data) : [];
     } catch {
       return [];
@@ -104,6 +109,6 @@ export class SincronizacionOfflineService {
   }
 
   limpiarColaLocal(): void {
-    localStorage.removeItem(this.LOCAL_STORAGE_KEY);
+    localStorage.removeItem(this.getStorageKey());
   }
 }

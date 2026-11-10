@@ -41,6 +41,8 @@ import {
 export class DashboardComponent implements OnInit {
   nombreUsuario = '';
   rolUsuario = '';
+  tenantNombre = 'Shopyn Golden Store';
+  planNombre = 'Profesional';
   loading = true;
   filtroDias: number | undefined = undefined;
 
@@ -58,6 +60,13 @@ export class DashboardComponent implements OnInit {
   ngOnInit(): void {
     const userStr = localStorage.getItem('usuario');
     const rolStr = localStorage.getItem('rol');
+    this.tenantNombre = localStorage.getItem('tenant_nombre') || 'Shopyn Golden Store';
+    const planStr = localStorage.getItem('tenant_plan');
+    if (planStr) {
+      try {
+        this.planNombre = JSON.parse(planStr).nombre || 'Profesional';
+      } catch {}
+    }
     if (userStr) {
       try {
         const u = JSON.parse(userStr);

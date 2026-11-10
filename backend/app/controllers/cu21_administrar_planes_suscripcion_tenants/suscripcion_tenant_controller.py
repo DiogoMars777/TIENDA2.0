@@ -90,3 +90,23 @@ class SuscripcionTenantController:
     @staticmethod
     def obtener_kpis(db: Session) -> Dict[str, Any]:
         return SuscripcionTenantService.obtener_kpis_saas(db)
+
+    @staticmethod
+    def asignar_administrador_tenant(
+        db: Session,
+        tenant_id: int,
+        nombre: str,
+        apellido: Optional[str],
+        email: str,
+        password: str,
+        usuario_id: Optional[int] = None
+    ) -> Dict[str, Any]:
+        return SuscripcionTenantService.asignar_administrador_tenant(
+            db=db,
+            tenant_id=tenant_id,
+            nombre=nombre,
+            apellido=apellido,
+            email=email,
+            password=password,
+            usuario_id=usuario_id
+        )

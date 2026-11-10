@@ -299,6 +299,32 @@ class SincronizacionOfflineService:
                     cobro.fecha_sincronizacion = datetime.utcnow()
                     cobro.venta_id = nueva_venta.id
 
+                    # Si el cobro offline corresponde a una Reserva (ej. REC-RES-XXXXXX o nota con RES-XXXXXX), marcarla como ENTREGADA
+                    try:
+                        import re
+                        from app.models.models import ReservaModel
+                        texto_busqueda = f"{cobro.nro_recibo_provisional or ''} {cobro.observaciones or ''}"
+                        match_res = re.search(r"(RES-[A-Z0-9]{4,10})", texto_busqueda.upper())
+                        if match_res:
+                            cod_res = match_res.group(1)
+                            res_obj = db.query(ReservaModel).filter(
+                                ReservaModel.tenant_id == tenant_id,
+                                ReservaModel.codigoreserva == cod_res
+                            ).first()
+                            if res_obj and res_obj.estado == "PENDIENTE":
+                                res_obj.estado = "ENTREGADA"
+                                res_obj.observaciones = f"{res_obj.observaciones or ''} [Pagada y Entregada vía Cobro Offline {cobro.nro_recibo_provisional}]".strip()
+                                for det_res in res_obj.detalles:
+                                    inv_res = db.query(InventarioModel).filter(
+                                        InventarioModel.tenant_id == tenant_id,
+                                        InventarioModel.sucursalid == res_obj.sucursalid,
+                                        InventarioModel.varianteid == det_res.varianteid
+                                    ).first()
+                                    if inv_res:
+                                        inv_res.stockreservado = max(0, (inv_res.stockreservado or 0) - det_res.cantidad)
+                    except Exception:
+                        pass
+
                 # 5. Registrar log en OperacionOfflineSync
                 if not sync_previo:
                     sync_rec = OperacionOfflineSync(

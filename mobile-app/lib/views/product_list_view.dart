@@ -33,9 +33,13 @@ class _ProductListViewState extends State<ProductListView> {
     super.initState();
     Future.microtask(() {
       if (mounted) {
-        context.read<ProductController>().fetchProductos();
+        final prodCtrl = context.read<ProductController>();
+        prodCtrl.fetchProductos();
         final auth = context.read<AuthController>();
-        context.read<NotificationController>().fetchNotificaciones(auth.currentUser?.token);
+        context.read<NotificationController>().fetchNotificaciones(
+              auth.currentUser?.token,
+              tenantId: prodCtrl.empresaSeleccionadaId,
+            );
       }
     });
   }
@@ -65,11 +69,37 @@ class _ProductListViewState extends State<ProductListView> {
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
-        title: const Text('Boutique Retail (CU08)'),
+        title: Text(
+          productCtrl.empresaActual.nombre,
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
         backgroundColor: const Color(0xFF0F172A),
         foregroundColor: Colors.white,
         elevation: 2,
         actions: [
+          // Botón Simular Sin Internet / Modo Offline
+          IconButton(
+            icon: Icon(
+              productCtrl.usandoCacheOffline ? Icons.wifi_off : Icons.wifi,
+              color: productCtrl.usandoCacheOffline ? Colors.amber : Colors.greenAccent,
+            ),
+            tooltip: productCtrl.usandoCacheOffline ? 'Volver a Online' : 'Simular Sin Internet',
+            onPressed: () {
+              productCtrl.toggleModoOffline();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    productCtrl.modoOfflineSimulado
+                        ? '📡 Modo Sin Internet activado: Usando catálogo y reservas en base local del móvil'
+                        : '🌐 Modo Online activado: Sincronizando con el servidor...',
+                  ),
+                  backgroundColor: productCtrl.modoOfflineSimulado ? Colors.amber.shade800 : Colors.teal,
+                  duration: const Duration(seconds: 2),
+                ),
+              );
+            },
+          ),
+
           // Botón Notificaciones con Contador (CU19)
           Consumer<NotificationController>(
             builder: (ctx, notifCtrl, _) {
@@ -157,7 +187,7 @@ class _ProductListViewState extends State<ProductListView> {
           // Botón Cerrar Sesión
           IconButton(
             icon: const Icon(Icons.logout),
-            tooltip: 'Cerrar Sesión',
+            tooltip: 'Cerrar Sesión / Cambiar Empresa',
             onPressed: () {
               authCtrl.logout();
               cartCtrl.limpiarCarrito();
@@ -174,38 +204,117 @@ class _ProductListViewState extends State<ProductListView> {
       ),
       body: Column(
         children: [
-          // Banner Selector de Sucursal Física (CU08)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            color: const Color(0xFF1E293B),
-            child: Row(
-              children: [
-                const Icon(Icons.storefront, color: Color(0xFF38BDF8), size: 24),
-                const SizedBox(width: 10),
-                const Text(
-                  'Tienda:',
-                  style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<int>(
-                      dropdownColor: const Color(0xFF1E293B),
-                      value: productCtrl.sucursalSeleccionadaId,
-                      icon: const Icon(Icons.keyboard_arrow_down, color: Color(0xFF38BDF8)),
-                      isExpanded: true,
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
-                      items: productCtrl.sucursales.map((b) {
-                        return DropdownMenuItem<int>(
-                          value: b.id,
-                          child: Text('${b.nombre} (${b.ciudad})', overflow: TextOverflow.ellipsis),
-                        );
-                      }).toList(),
-                      onChanged: (newId) {
-                        productCtrl.seleccionarSucursal(newId);
-                      },
+          // Banner de Modo Sin Internet (cuando está sin red o en modo offline simulado)
+          if (productCtrl.usandoCacheOffline)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              color: const Color(0xFFD97706),
+              child: const Row(
+                children: [
+                  Icon(Icons.wifi_off, color: Colors.white, size: 18),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'SIN INTERNET: Viendo catálogo local del móvil. Puedes agregar prendas y hacer Reservas Offline.',
+                      style: TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.bold),
                     ),
                   ),
+                ],
+              ),
+            ),
+
+          // Selector de Empresa Disponible (Multi-Tenant) + Sucursal Física (CU08)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            color: const Color(0xFF1E293B),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.apartment, color: Colors.amber, size: 20),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Empresa:',
+                      style: TextStyle(color: Colors.white70, fontSize: 12.5, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<int>(
+                          isDense: true,
+                          dropdownColor: const Color(0xFF0F172A),
+                          value: productCtrl.empresaSeleccionadaId,
+                          icon: const Icon(Icons.keyboard_arrow_down, color: Colors.amber),
+                          isExpanded: true,
+                          style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 13),
+                          items: productCtrl.empresas.map((emp) {
+                            return DropdownMenuItem<int>(
+                              value: emp.id,
+                              child: Text(emp.nombre, overflow: TextOverflow.ellipsis),
+                            );
+                          }).toList(),
+                          onChanged: (nuevoTenantId) async {
+                            if (nuevoTenantId != null && nuevoTenantId != productCtrl.empresaSeleccionadaId) {
+                              cartCtrl.limpiarCarrito();
+                              await productCtrl.seleccionarEmpresa(nuevoTenantId);
+                              if (context.mounted) {
+                                context.read<NotificationController>().fetchNotificaciones(
+                                      authCtrl.currentUser?.token,
+                                      tenantId: nuevoTenantId,
+                                    );
+                              }
+                              if (productCtrl.sucursalActual != null) {
+                                cartCtrl.setSucursal(
+                                  productCtrl.sucursalActual!.id,
+                                  productCtrl.sucursalActual!.nombre,
+                                );
+                              }
+                            }
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const Divider(color: Colors.white12, height: 10),
+                Row(
+                  children: [
+                    const Icon(Icons.storefront, color: Color(0xFF38BDF8), size: 20),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Sucursal:',
+                      style: TextStyle(color: Colors.white70, fontSize: 12.5, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<int>(
+                          isDense: true,
+                          dropdownColor: const Color(0xFF1E293B),
+                          value: productCtrl.sucursalSeleccionadaId,
+                          icon: const Icon(Icons.keyboard_arrow_down, color: Color(0xFF38BDF8)),
+                          isExpanded: true,
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                          items: productCtrl.sucursales.map((b) {
+                            return DropdownMenuItem<int>(
+                              value: b.id,
+                              child: Text('${b.nombre} (${b.ciudad ?? "Bolivia"})', overflow: TextOverflow.ellipsis),
+                            );
+                          }).toList(),
+                          onChanged: (newId) {
+                            productCtrl.seleccionarSucursal(newId);
+                            if (newId != null) {
+                              final suc = productCtrl.sucursales.where((s) => s.id == newId).toList();
+                              if (suc.isNotEmpty) {
+                                cartCtrl.setSucursal(suc.first.id, suc.first.nombre);
+                              }
+                            }
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -511,6 +620,44 @@ class _ProductListViewState extends State<ProductListView> {
                                                         : null,
                                                   ),
                                                 ),
+
+                                                // Botón Reservar Directo (Funciona Online y Sin Internet)
+                                                if (enStock)
+                                                  SizedBox(
+                                                    height: 32,
+                                                    child: ElevatedButton.icon(
+                                                      style: ElevatedButton.styleFrom(
+                                                        backgroundColor: const Color(0xFF0284C7),
+                                                        foregroundColor: Colors.white,
+                                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                                                      ),
+                                                      icon: const Icon(Icons.bookmark_add, size: 13),
+                                                      label: const Text('Reservar', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold)),
+                                                      onPressed: () {
+                                                        if (prod.variantes.length > 1) {
+                                                          _mostrarSelectorVariantesModal(context, prod, cartCtrl);
+                                                        } else {
+                                                          final v = prod.variantes.isNotEmpty ? prod.variantes.first : null;
+                                                          final pmodel = ProductModel(
+                                                            id: prod.id,
+                                                            nombre: prod.nombre,
+                                                            descripcion: prod.descripcion,
+                                                            precio: prod.preciobase,
+                                                            stock: prod.stockSucursal,
+                                                            imagenUrl: prod.imagenprincipal,
+                                                            activo: prod.disponible,
+                                                            varianteId: v?.varianteId,
+                                                            colorSeleccionado: v?.color,
+                                                            tallaSeleccionada: v?.talla,
+                                                            hexSeleccionado: v?.codigohex,
+                                                          );
+                                                          cartCtrl.agregarProducto(pmodel);
+                                                          Navigator.pushNamed(context, '/cart');
+                                                        }
+                                                      },
+                                                    ),
+                                                  ),
                                               ],
                                             ),
                                           ],
@@ -702,7 +849,11 @@ class _ProductListViewState extends State<ProductListView> {
   void _mostrarNotificacionesSheet(BuildContext context) {
     final notifCtrl = Provider.of<NotificationController>(context, listen: false);
     final auth = Provider.of<AuthController>(context, listen: false);
-    notifCtrl.fetchNotificaciones(auth.currentUser?.token);
+    final prodCtrl = Provider.of<ProductController>(context, listen: false);
+    notifCtrl.fetchNotificaciones(
+      auth.currentUser?.token,
+      tenantId: prodCtrl.empresaSeleccionadaId,
+    );
 
     showModalBottomSheet(
       context: context,
@@ -730,13 +881,16 @@ class _ProductListViewState extends State<ProductListView> {
                       ),
                       if (ctrl.notificaciones.isNotEmpty)
                         TextButton(
-                          onPressed: () => ctrl.marcarTodasLeidas(auth.currentUser?.token),
+                          onPressed: () => ctrl.marcarTodasLeidas(
+                            auth.currentUser?.token,
+                            tenantId: prodCtrl.empresaSeleccionadaId,
+                          ),
                           child: const Text('Marcar leídas', style: TextStyle(fontSize: 12)),
                         ),
                     ],
                   ),
                   const Divider(),
-                  if (ctrl.cargando)
+                  if (ctrl.cargando && ctrl.notificaciones.isEmpty)
                     const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator()))
                   else if (ctrl.notificaciones.isEmpty)
                     const Padding(
@@ -752,34 +906,91 @@ class _ProductListViewState extends State<ProductListView> {
                         itemCount: ctrl.notificaciones.length,
                         itemBuilder: (_, i) {
                           final n = ctrl.notificaciones[i];
-                          return ListTile(
-                            contentPadding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-                            leading: CircleAvatar(
-                              backgroundColor: n.tipo == 'RESERVA_EXPIRANDO'
-                                  ? Colors.orange.shade100
-                                  : (n.tipo == 'STOCK_CRITICO' ? Colors.red.shade100 : Colors.blue.shade100),
-                              child: Icon(
-                                n.tipo == 'RESERVA_EXPIRANDO'
-                                    ? Icons.timer
-                                    : (n.tipo == 'STOCK_CRITICO' ? Icons.warning : Icons.info_outline),
-                                color: n.tipo == 'RESERVA_EXPIRANDO'
-                                    ? Colors.orange.shade900
-                                    : (n.tipo == 'STOCK_CRITICO' ? Colors.red.shade900 : Colors.blue.shade900),
-                                size: 20,
-                              ),
+                          final esCompra = n.tipo == 'COMPRA_EXITOSA' || n.titulo.contains('Compra');
+                          final esReserva = n.tipo == 'RESERVA_EXITOSA' || n.titulo.contains('Reserva') || n.titulo.contains('Apartado');
+                          return Container(
+                            margin: const EdgeInsets.symmetric(vertical: 3),
+                            decoration: BoxDecoration(
+                              color: n.leido ? Colors.transparent : const Color(0xFFF0FDF4),
+                              borderRadius: BorderRadius.circular(10),
+                              border: n.leido ? null : Border.all(color: Colors.green.shade200),
                             ),
-                            title: Text(n.titulo, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                            subtitle: Text(n.mensaje, style: const TextStyle(fontSize: 12)),
-                            trailing: Text(n.fecha, style: const TextStyle(fontSize: 10, color: Colors.grey)),
-                            onTap: () {
-                              ctrl.marcarLeida(n.id, auth.currentUser?.token);
-                              Navigator.pop(ctx);
-                              if (n.enlace == '/mis-reservas') {
-                                Navigator.push(context, MaterialPageRoute(builder: (_) => const MyReservationsView()));
-                              } else if (n.enlace == '/mis-pedidos') {
-                                Navigator.push(context, MaterialPageRoute(builder: (_) => const OrdersHistoryView()));
-                              }
-                            },
+                            child: ListTile(
+                              contentPadding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                              leading: CircleAvatar(
+                                backgroundColor: esCompra
+                                    ? Colors.green.shade100
+                                    : (esReserva
+                                        ? Colors.teal.shade100
+                                        : (n.tipo == 'RESERVA_EXPIRANDO'
+                                            ? Colors.orange.shade100
+                                            : (n.tipo == 'STOCK_CRITICO' ? Colors.red.shade100 : Colors.blue.shade100))),
+                                child: Icon(
+                                  esCompra
+                                      ? Icons.shopping_bag
+                                      : (esReserva
+                                          ? Icons.bookmark_added
+                                          : (n.tipo == 'RESERVA_EXPIRANDO'
+                                              ? Icons.timer
+                                              : (n.tipo == 'STOCK_CRITICO' ? Icons.warning : Icons.info_outline))),
+                                  color: esCompra
+                                      ? Colors.green.shade800
+                                      : (esReserva
+                                          ? Colors.teal.shade800
+                                          : (n.tipo == 'RESERVA_EXPIRANDO'
+                                              ? Colors.orange.shade900
+                                              : (n.tipo == 'STOCK_CRITICO' ? Colors.red.shade900 : Colors.blue.shade900))),
+                                  size: 20,
+                                ),
+                              ),
+                              title: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      n.titulo,
+                                      style: TextStyle(
+                                        fontWeight: n.leido ? FontWeight.w600 : FontWeight.w800,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  ),
+                                  if (!n.leido)
+                                    Container(
+                                      width: 8,
+                                      height: 8,
+                                      decoration: const BoxDecoration(
+                                        color: Colors.green,
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const SizedBox(height: 2),
+                                  Text(n.mensaje, style: const TextStyle(fontSize: 12)),
+                                  if (n.fecha.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 3),
+                                      child: Text(n.fecha, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                                    ),
+                                ],
+                              ),
+                              onTap: () {
+                                ctrl.marcarLeida(
+                                  n.id,
+                                  auth.currentUser?.token,
+                                  tenantId: prodCtrl.empresaSeleccionadaId,
+                                );
+                                Navigator.pop(ctx);
+                                if (n.enlace == '/mis-reservas') {
+                                  Navigator.push(context, MaterialPageRoute(builder: (_) => const MyReservationsView()));
+                                } else if (n.enlace == '/mis-pedidos' || esCompra) {
+                                  Navigator.push(context, MaterialPageRoute(builder: (_) => const OrdersHistoryView()));
+                                }
+                              },
+                            ),
                           );
                         },
                       ),
@@ -1007,10 +1218,10 @@ class _SelectorVarianteSheetState extends State<_SelectorVarianteSheet> {
               );
             }).toList(),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
           SizedBox(
             width: double.infinity,
-            height: 48,
+            height: 46,
             child: ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
                 backgroundColor: tieneStock ? const Color(0xFF0F172A) : Colors.grey[400],
@@ -1054,6 +1265,43 @@ class _SelectorVarianteSheetState extends State<_SelectorVarianteSheet> {
                   : null,
             ),
           ),
+          if (tieneStock) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              height: 46,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0284C7),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                icon: const Icon(Icons.bookmark_add, size: 18),
+                label: Text(
+                  'Reservar Ahora (${_selectedVariant.color} - ${_selectedVariant.talla})',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13.5),
+                ),
+                onPressed: () {
+                  final pmodel = ProductModel(
+                    id: widget.prod.id,
+                    nombre: widget.prod.nombre,
+                    descripcion: widget.prod.descripcion,
+                    precio: widget.prod.preciobase,
+                    stock: _selectedVariant.stock,
+                    imagenUrl: widget.prod.imagenprincipal,
+                    activo: widget.prod.disponible,
+                    varianteId: _selectedVariant.varianteId,
+                    colorSeleccionado: _selectedVariant.color,
+                    tallaSeleccionada: _selectedVariant.talla,
+                    hexSeleccionado: _selectedVariant.codigohex,
+                  );
+                  widget.cartCtrl.agregarProducto(pmodel);
+                  Navigator.pop(context);
+                  Navigator.pushNamed(context, '/cart');
+                },
+              ),
+            ),
+          ],
         ],
       ),
     );

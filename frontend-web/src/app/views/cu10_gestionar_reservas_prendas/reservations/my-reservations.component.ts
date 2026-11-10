@@ -6,7 +6,7 @@
 
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterModule } from '@angular/router';
+import { Router, RouterModule } from '@angular/router';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { MatTooltipModule } from '@angular/material/tooltip';
@@ -34,8 +34,14 @@ export class MyReservationsComponent implements OnInit {
   loading = true;
   cancelandoId: number | null = null;
   copiadoId: number | null = null;
+  isAdminView = false;
 
-  constructor(private reservationService: ReservationService) {}
+  constructor(
+    private reservationService: ReservationService,
+    private router: Router
+  ) {
+    this.isAdminView = this.router.url.startsWith('/admin');
+  }
 
   ngOnInit(): void {
     this.cargarReservas();
@@ -43,7 +49,11 @@ export class MyReservationsComponent implements OnInit {
 
   cargarReservas(): void {
     this.loading = true;
-    this.reservationService.getMisReservas().subscribe({
+    const obs$ = this.isAdminView
+      ? this.reservationService.getReservasAdmin()
+      : this.reservationService.getMisReservas();
+
+    obs$.subscribe({
       next: (res) => {
         this.reservas = res;
         this.aplicarFiltro(this.filtroActual);
@@ -101,6 +111,27 @@ export class MyReservationsComponent implements OnInit {
 
   get entregadasCount(): number {
     return this.reservas.filter(r => r.estado === 'ENTREGADA').length;
+  }
+
+  get pendientesOfflineCount(): number {
+    return this.reservationService.obtenerReservasOfflinePendientes().length;
+  }
+
+  sincronizarReservasOffline(): void {
+    this.reservationService.sincronizarReservasOffline().subscribe({
+      next: (creadas) => {
+        if (creadas && creadas.length > 0) {
+          alert(`✅ Se sincronizaron ${creadas.length} reserva(s) offline con el servidor central.`);
+          this.cargarReservas();
+        } else {
+          alert('⚠️ Desactiva primero el Modo Sin Internet en el Catálogo para sincronizar con el servidor.');
+        }
+      }
+    });
+  }
+
+  irAAtenderEnCaja(res: Reserva): void {
+    this.router.navigate(['/admin/reservas'], { queryParams: { codigo: res.codigo_reserva } });
   }
 
   // --- Modal Ticket Digital de Reserva (CU10 Senior Feature) ---

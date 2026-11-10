@@ -142,16 +142,62 @@ def ejecutar_migracion():
             );
         """)
 
-        # 4. Insertar Plan y Tenant por Defecto
-        print_step("Verificando / insertando Tenant #1 por defecto...")
+        # 4. Insertar Planes Oficiales (Sección 9.4: Básico y Profesional) y Tenants
+        print_step("Configurando Planes Oficiales (Básico y Profesional) y Tenants...")
         cur.execute("""
-            INSERT INTO public.plan_suscripcion (id, nombre, descripcion, precio_mensual, limite_sucursales, limite_usuarios, limite_productos, habilitar_vestidor_ia)
-            VALUES (1, 'Profesional Retail', 'Plan integral multitienda', 250.00, 5, 20, 1000, TRUE)
-            ON CONFLICT (id) DO NOTHING;
+            ALTER TABLE public.plan_suscripcion ADD COLUMN IF NOT EXISTS habilitar_reportes_ia BOOLEAN DEFAULT FALSE;
+
+            INSERT INTO public.plan_suscripcion (id, nombre, descripcion, precio_mensual, limite_sucursales, limite_usuarios, limite_productos, habilitar_reportes_ia, habilitar_vestidor_ia, activo)
+            VALUES (
+                1,
+                'Profesional',
+                'Plan Profesional: Hasta 10 sucursales activas, gestión de productos, ventas, reservas, operación offline, reportes convencionales y Reportes Generativos con IA.',
+                250.00,
+                10,
+                25,
+                1000,
+                TRUE,
+                TRUE,
+                TRUE
+            )
+            ON CONFLICT (id) DO UPDATE SET
+                nombre = EXCLUDED.nombre,
+                descripcion = EXCLUDED.descripcion,
+                precio_mensual = EXCLUDED.precio_mensual,
+                limite_sucursales = EXCLUDED.limite_sucursales,
+                limite_usuarios = EXCLUDED.limite_usuarios,
+                limite_productos = EXCLUDED.limite_productos,
+                habilitar_reportes_ia = EXCLUDED.habilitar_reportes_ia,
+                habilitar_vestidor_ia = EXCLUDED.habilitar_vestidor_ia,
+                activo = TRUE;
+
+            INSERT INTO public.plan_suscripcion (id, nombre, descripcion, precio_mensual, limite_sucursales, limite_usuarios, limite_productos, habilitar_reportes_ia, habilitar_vestidor_ia, activo)
+            VALUES (
+                2,
+                'Básico',
+                'Plan Básico: Hasta 2 sucursales activas, gestión de productos, ventas, reservas, operación offline y reportes convencionales (sin Reportes Generativos con IA).',
+                120.00,
+                2,
+                5,
+                200,
+                FALSE,
+                FALSE,
+                TRUE
+            )
+            ON CONFLICT (id) DO UPDATE SET
+                nombre = EXCLUDED.nombre,
+                descripcion = EXCLUDED.descripcion,
+                precio_mensual = EXCLUDED.precio_mensual,
+                limite_sucursales = EXCLUDED.limite_sucursales,
+                limite_usuarios = EXCLUDED.limite_usuarios,
+                limite_productos = EXCLUDED.limite_productos,
+                habilitar_reportes_ia = EXCLUDED.habilitar_reportes_ia,
+                habilitar_vestidor_ia = EXCLUDED.habilitar_vestidor_ia,
+                activo = TRUE;
 
             INSERT INTO public.tenant (id, nombre, slug, email_contacto, telefono_contacto, plan_id, activo)
             VALUES (1, 'Shopyn Golden Store', 'goldenstore', 'admin@goldenstore.com', '70000001', 1, TRUE)
-            ON CONFLICT (id) DO NOTHING;
+            ON CONFLICT (id) DO UPDATE SET plan_id = 1, email_contacto = 'admin@goldenstore.com';
 
             INSERT INTO public.tenant_configuracion (tenant_id, moneda_simbolo, tiempo_expiracion_reserva_horas, color_primario_hex)
             VALUES (1, 'Bs.', 48, '#0d1b2a')

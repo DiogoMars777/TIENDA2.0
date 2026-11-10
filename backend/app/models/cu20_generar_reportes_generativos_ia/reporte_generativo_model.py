@@ -30,4 +30,5 @@ class ReporteGenerativoIA(Base):
 
 
 ReporteGenerativoModel = ReporteGenerativoIA
+ReporteGenerativo = ReporteGenerativoIA
 reporte_generativo = ReporteGenerativoIA

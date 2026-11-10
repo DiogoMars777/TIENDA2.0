@@ -1,6 +1,6 @@
 // ==============================================================================
 // CAPA MODELO (MVC - MODEL EN FLUTTER / DART)
-// Módulo: CU08 - Consultar Catálogo y Disponibilidad de Inventario
+// Módulo: CU08 - Consultar Catálogo y Disponibilidad de Inventario + Multi-Tenant
 // Ubicación: mobile-app/lib/models/inventory_model.dart
 // ==============================================================================
 
@@ -14,6 +14,43 @@ int _parseInt(dynamic value, [int defaultValue = 0]) {
   if (value == null) return defaultValue;
   if (value is num) return value.toInt();
   return int.tryParse(value.toString()) ?? defaultValue;
+}
+
+class EmpresaModel {
+  final int id;
+  final String nombre;
+  final String slug;
+  final String? planNombre;
+  final List<BranchModel> sucursales;
+
+  EmpresaModel({
+    required this.id,
+    required this.nombre,
+    required this.slug,
+    this.planNombre,
+    this.sucursales = const [],
+  });
+
+  factory EmpresaModel.fromJson(Map<String, dynamic> json) {
+    final rawSucs = json['sucursales'] as List? ?? [];
+    return EmpresaModel(
+      id: _parseInt(json['id'], 1),
+      nombre: json['nombre']?.toString() ?? 'Tienda',
+      slug: json['slug']?.toString() ?? 'tienda',
+      planNombre: json['plan_nombre']?.toString(),
+      sucursales: rawSucs.map((s) => BranchModel.fromJson(Map<String, dynamic>.from(s))).toList(),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'nombre': nombre,
+      'slug': slug,
+      'plan_nombre': planNombre,
+      'sucursales': sucursales.map((s) => s.toJson()).toList(),
+    };
+  }
 }
 
 class BranchModel {
@@ -39,6 +76,16 @@ class BranchModel {
       direccion: json['direccion']?.toString(),
       telefono: json['telefono']?.toString(),
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'nombre': nombre,
+      'ciudad': ciudad,
+      'direccion': direccion,
+      'telefono': telefono,
+    };
   }
 }
 
@@ -75,6 +122,19 @@ class ProductVariantModel {
       disponible: json['disponible'] ?? false,
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'variante_id': varianteId,
+      'sku': sku,
+      'talla': talla,
+      'color': color,
+      'codigohex': codigohex,
+      'precio': precio,
+      'stock': stock,
+      'disponible': disponible,
+    };
+  }
 }
 
 class BranchAvailabilityDetailModel {
@@ -105,7 +165,7 @@ class BranchAvailabilityDetailModel {
       direccion: json['direccion']?.toString(),
       telefono: json['telefono']?.toString(),
       stockTotal: _parseInt(json['stock_total']),
-      variantes: rawVars.map((v) => ProductVariantModel.fromJson(v)).toList(),
+      variantes: rawVars.map((v) => ProductVariantModel.fromJson(Map<String, dynamic>.from(v))).toList(),
     );
   }
 }
@@ -135,7 +195,7 @@ class ProductAvailabilityModel {
       marca: json['marca']?.toString(),
       preciobase: _parseDouble(json['preciobase'] ?? json['precio']),
       imagenprincipal: json['imagenprincipal']?.toString(),
-      sucursales: rawSucs.map((s) => BranchAvailabilityDetailModel.fromJson(s)).toList(),
+      sucursales: rawSucs.map((s) => BranchAvailabilityDetailModel.fromJson(Map<String, dynamic>.from(s))).toList(),
     );
   }
 }
@@ -172,7 +232,7 @@ class CatalogProductModel {
   factory CatalogProductModel.fromJson(Map<String, dynamic> json) {
     var rawVariantes = json['variantes'] as List? ?? [];
     List<ProductVariantModel> listVariantes =
-        rawVariantes.map((v) => ProductVariantModel.fromJson(v)).toList();
+        rawVariantes.map((v) => ProductVariantModel.fromJson(Map<String, dynamic>.from(v))).toList();
 
     return CatalogProductModel(
       id: _parseInt(json['id']),
@@ -188,6 +248,23 @@ class CatalogProductModel {
       disponible: json['disponible'] ?? false,
       variantes: listVariantes,
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'nombre': nombre,
+      'descripcion': descripcion,
+      'marca': marca,
+      'genero': genero,
+      'preciobase': preciobase,
+      'imagenprincipal': imagenprincipal,
+      'categoria_nombre': categoriaNombre,
+      'stock_sucursal': stockSucursal,
+      'stock_total': stockTotal,
+      'disponible': disponible,
+      'variantes': variantes.map((v) => v.toJson()).toList(),
+    };
   }
 
   /// Lista de colores únicos disponibles para esta prenda

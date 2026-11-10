@@ -12,6 +12,7 @@ import {
   NuevoTenantRequest,
   CambiarPlanRequest,
   RenovarSuscripcionRequest,
+  AsignarAdminTenantRequest,
   KpiSaaSDTO
 } from '../../models/cu21_administrar_planes_suscripcion_tenants/suscripcion-tenant.model';
 
@@ -38,6 +39,7 @@ export class SuscripcionTenantController {
   modalPlanAbierto = signal<boolean>(false);
   modalCambiarPlanAbierto = signal<boolean>(false);
   modalRenovarAbierto = signal<boolean>(false);
+  modalAsignarAdminAbierto = signal<boolean>(false);
 
   // Seleccionados para modal
   tenantSeleccionado = signal<TenantDTO | null>(null);
@@ -179,6 +181,36 @@ export class SuscripcionTenantController {
       error: (err) => {
         this.guardando.set(false);
         this.error.set(err?.error?.detail || 'Error al renovar suscripción.');
+      }
+    });
+  }
+
+  abrirModalAsignarAdmin(tenant: TenantDTO): void {
+    this.tenantSeleccionado.set(tenant);
+    this.modalAsignarAdminAbierto.set(true);
+    this.error.set(null);
+  }
+
+  cerrarModalAsignarAdmin(): void {
+    this.modalAsignarAdminAbierto.set(false);
+    this.tenantSeleccionado.set(null);
+  }
+
+  ejecutarAsignarAdmin(payload: AsignarAdminTenantRequest): void {
+    const t = this.tenantSeleccionado();
+    if (!t) return;
+
+    this.guardando.set(true);
+    this.service.asignarAdministradorTenant(t.id, payload).subscribe({
+      next: (res) => {
+        this.guardando.set(false);
+        this.mostrarExito(`Administrador '${res.administrador.email}' asignado exitosamente a '${t.nombre}'.`);
+        this.cerrarModalAsignarAdmin();
+        this.cargarDatos();
+      },
+      error: (err) => {
+        this.guardando.set(false);
+        this.error.set(err?.error?.detail || 'Error al asignar administrador al tenant.');
       }
     });
   }

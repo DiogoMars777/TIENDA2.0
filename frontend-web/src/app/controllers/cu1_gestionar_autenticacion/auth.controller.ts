@@ -91,6 +91,11 @@ export class AuthController {
         localStorage.setItem('tenant_id', tenantId);
         localStorage.setItem('tenant_slug', tenantSlugVal);
         localStorage.setItem('tenant_nombre', tenantNombreVal);
+        if ((res as any).plan) {
+          localStorage.setItem('tenant_plan', JSON.stringify((res as any).plan));
+        } else {
+          localStorage.removeItem('tenant_plan');
+        }
 
         if (user) {
           const userObj = {
@@ -129,6 +134,7 @@ export class AuthController {
       localStorage.removeItem('tenant_id');
       localStorage.removeItem('tenant_slug');
       localStorage.removeItem('tenant_nombre');
+      localStorage.removeItem('tenant_plan');
     }
     this.usuarioActualSubject.next(null);
     this.tenantActualSubject.next(null);
@@ -201,7 +207,7 @@ export class AuthController {
   esAdministrador(): boolean {
     const user = this.obtenerUsuarioActual();
     const rol = (localStorage.getItem('rol') || (user?.rol) || '').toUpperCase();
-    return rol === 'ADMIN' || rol === 'ADMINISTRADOR' || rol === 'SUPERVISOR';
+    return rol === 'SUPERADMIN' || rol === 'ADMIN' || rol === 'ADMINISTRADOR' || rol === 'SUPERVISOR';
   }
 
   esCliente(): boolean {

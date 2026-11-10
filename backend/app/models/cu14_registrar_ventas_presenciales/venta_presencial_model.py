@@ -87,6 +87,8 @@ VentaModel = Venta
 DetalleVentaModel = DetalleVenta
 MetodoPagoModel = MetodoPago
 ReciboModel = Recibo
+ComprobantePago = Recibo
+ComprobantePagoModel = Recibo
 PagoModel = Pago
 
 venta = Venta

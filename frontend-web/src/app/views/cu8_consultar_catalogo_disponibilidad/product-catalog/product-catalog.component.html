@@ -9,16 +9,30 @@
   <header class="catalog-header">
     <div class="header-content">
       <div class="brand-zone">
-        <button *ngIf="isAdmin" mat-icon-button routerLink="/admin/products" class="btn-back" matTooltip="Regresar al panel de gestión">
+        <button *ngIf="isAdmin && !isAdminView" mat-icon-button routerLink="/admin/products" class="btn-back" matTooltip="Regresar al panel de gestión">
           <mat-icon>arrow_back</mat-icon>
         </button>
         <div class="brand-title">
-          <h1>Shopyn Golden Store <span>Retail</span></h1>
-          <p class="subtitle">Catálogo Exclusivo y Disponibilidad en Tiendas Físicas (CU08)</p>
+          <h1>{{ tenantNombre }} <span>Retail</span></h1>
+          <p class="subtitle">Catálogo Exclusivo y Disponibilidad Local / Online (CU08)</p>
         </div>
       </div>
 
       <div class="header-actions">
+        <!-- Botón Simulador Sin Internet (Offline PWA / Móvil) -->
+        <button
+          type="button"
+          (click)="toggleModoOffline()"
+          [style.background]="offlineMode ? '#fef3c7' : '#f1f5f9'"
+          [style.color]="offlineMode ? '#b45309' : '#334155'"
+          [style.border]="offlineMode ? '1px solid #f59e0b' : '1px solid #cbd5e1'"
+          style="display: flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 999px; font-weight: 700; font-size: 12px; cursor: pointer;"
+          matTooltip="Simular navegación y reserva de prendas sin conexión a internet"
+        >
+          <mat-icon style="font-size: 18px; width: 18px; height: 18px;">{{ offlineMode ? 'wifi_off' : 'wifi' }}</mat-icon>
+          <span>{{ offlineMode ? 'Modo Sin Internet: ACTIVO' : 'Simular Sin Internet' }}</span>
+        </button>
+
         <!-- Selector de Tienda / Sucursal Física -->
         <div class="sucursal-picker">
           <mat-icon class="picker-icon">storefront</mat-icon>
@@ -33,20 +47,20 @@
           </div>
         </div>
 
-        <!-- Indicador de Mis Reservas (CU10) -->
-        <div class="reserva-pill" routerLink="/mis-reservas" matTooltip="Ver Mis Reservas en Tienda Física (CU10)">
+        <!-- Indicador de Reservas (CU10) -->
+        <div class="reserva-pill" [routerLink]="isAdminView ? '/admin/mis-reservas' : '/mis-reservas'" matTooltip="Ver Reservas en Tienda Física (CU10)">
           <mat-icon>receipt_long</mat-icon>
-          <span class="reserva-label">Mis Reservas</span>
+          <span class="reserva-label">Reservas</span>
         </div>
 
-        <!-- Indicador de Mis Pedidos Online (CU15) -->
-        <div class="orders-pill" routerLink="/mis-pedidos" matTooltip="Ver Mis Pedidos con Envío a Domicilio (CU15)">
+        <!-- Indicador de Pedidos Online (CU15) -->
+        <div class="orders-pill" [routerLink]="isAdminView ? '/admin/mis-pedidos' : '/mis-pedidos'" matTooltip="Ver Pedidos con Envío a Domicilio (CU15)">
           <mat-icon>local_shipping</mat-icon>
-          <span class="orders-label">Mis Pedidos</span>
+          <span class="orders-label">Pedidos</span>
         </div>
 
         <!-- Indicador de Carrito -->
-        <div class="cart-pill" routerLink="/carrito" matTooltip="Ver mi Carrito de Compras (CU09)">
+        <div class="cart-pill" [routerLink]="isAdminView ? '/admin/carrito' : '/carrito'" matTooltip="Ver Carrito de Compras (CU09)">
           <mat-icon>shopping_bag</mat-icon>
           <span class="cart-count">{{ itemsCarritoCount }}</span>
         </div>

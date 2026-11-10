@@ -18,6 +18,7 @@ class PlanSuscripcionBase(BaseModel):
     limite_sucursales: int = Field(1, ge=1, description="Máximo de sucursales físicas permitidas")
     limite_usuarios: int = Field(3, ge=1, description="Máximo de colaboradores/usuarios permitidos")
     limite_productos: int = Field(100, ge=1, description="Límite del catálogo de productos")
+    habilitar_reportes_ia: bool = Field(False, description="Acceso a Reportes Generativos con IA (CU20)")
     habilitar_vestidor_ia: bool = Field(False, description="Acceso a módulo de Vestidor Virtual con IA")
     activo: bool = Field(True, description="Indica si el plan está disponible comercialmente")
 
@@ -33,6 +34,7 @@ class PlanSuscripcionUpdate(BaseModel):
     limite_sucursales: Optional[int] = None
     limite_usuarios: Optional[int] = None
     limite_productos: Optional[int] = None
+    habilitar_reportes_ia: Optional[bool] = None
     habilitar_vestidor_ia: Optional[bool] = None
     activo: Optional[bool] = None
 
@@ -60,6 +62,17 @@ class TenantBase(BaseModel):
 class TenantCreate(TenantBase):
     plan_id: int = Field(..., description="ID del plan de suscripción seleccionado")
     meses_suscripcion: int = Field(12, ge=1, le=36, description="Meses contratados inicialmente (default 1 año)")
+    admin_nombre: Optional[str] = Field(None, description="Nombre del administrador de la empresa (Tenant)")
+    admin_apellido: Optional[str] = Field(None, description="Apellido del administrador de la empresa (Tenant)")
+    admin_email: Optional[str] = Field(None, description="Correo electrónico de acceso del administrador del Tenant")
+    admin_password: Optional[str] = Field("Admin123.", description="Contraseña de acceso para el administrador del Tenant")
+
+
+class AsignarAdminTenantRequest(BaseModel):
+    nombre: str = Field(..., description="Nombre del administrador del tenant")
+    apellido: Optional[str] = Field("", description="Apellido del administrador del tenant")
+    email: str = Field(..., description="Correo de inicio de sesión del administrador del tenant")
+    password: str = Field("Admin123.", description="Contraseña del administrador del tenant")
 
 
 class TenantUpdate(BaseModel):

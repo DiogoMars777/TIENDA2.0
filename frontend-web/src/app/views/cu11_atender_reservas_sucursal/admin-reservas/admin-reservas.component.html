@@ -9,12 +9,25 @@
   <div class="page-title-bar">
     <div>
       <h2>Atención de Reservas en Sucursal <span class="badge-cu">CU11</span></h2>
-      <p class="subtitle">Búsqueda rápida en caja, verificación física de prendas y confirmación de entrega con descuento de stock</p>
+      <p class="subtitle">Búsqueda rápida en caja, verificación física de prendas y cobro en tienda (Online u Offline CU22)</p>
     </div>
-    <button class="btn-refresh" (click)="cargarReservas()" matTooltip="Refrescar listado">
-      <mat-icon>refresh</mat-icon>
-      <span>Actualizar</span>
-    </button>
+    <div style="display: flex; gap: 10px; align-items: center;">
+      <button
+        *ngIf="pendientesOfflineCount > 0"
+        type="button"
+        (click)="sincronizarReservasLocales()"
+        [disabled]="sincronizandoOffline"
+        style="display: flex; align-items: center; gap: 6px; background: #f59e0b; color: white; border: none; padding: 9px 14px; border-radius: 8px; font-weight: 700; cursor: pointer;"
+      >
+        <mat-icon>sync</mat-icon>
+        <span>Sincronizar Reservas Offline ({{ pendientesOfflineCount }})</span>
+      </button>
+
+      <button class="btn-refresh" (click)="cargarReservas()" matTooltip="Refrescar listado">
+        <mat-icon>refresh</mat-icon>
+        <span>Actualizar</span>
+      </button>
+    </div>
   </div>
 
   <!-- Barra de Búsqueda Rápida para Caja -->
@@ -226,7 +239,7 @@
         </div>
 
         <!-- Notas del Cajero -->
-        <div *ngIf="reservaSeleccionada.estado === 'PENDIENTE' || reservaSeleccionada.estado === 'PAGADA'" class="cashier-notes-box">
+        <div *ngIf="(reservaSeleccionada.estado === 'PENDIENTE' || reservaSeleccionada.estado === 'PAGADA') && !reciboOfflineEmitido" class="cashier-notes-box">
           <label for="notas">Notas de la entrega en mostrador (opcional):</label>
           <input
             id="notas"
@@ -237,6 +250,64 @@
             [disabled]="procesandoAccion"
           />
         </div>
+
+        <!-- ========================================================================= -->
+        <!-- SUB-PANEL: PAGO OFFLINE EN CONTINGENCIA (CU22 DESDE ATENCIÓN DE RESERVA)  -->
+        <!-- ========================================================================= -->
+        <div *ngIf="modoPagoOffline && !reciboOfflineEmitido" style="margin-top: 18px; background: #fffbeb; border: 2px solid #f59e0b; border-radius: 12px; padding: 18px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+            <div style="display: flex; align-items: center; gap: 8px; color: #b45309;">
+              <mat-icon>wifi_off</mat-icon>
+              <strong style="font-size: 15px;">Cobro de Contado Offline en Caja (CU22 Contingencia)</strong>
+            </div>
+            <span style="background: #fef3c7; color: #92400e; padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 800; font-family: monospace;">
+              Folio: {{ folioOfflineProvisional }}
+            </span>
+          </div>
+
+          <p style="margin: 0 0 14px 0; font-size: 12px; color: #78350f;">
+            Se emitirá un recibo provisional por <strong>Bs. {{ reservaSeleccionada.total_estimado | number:'1.2-2' }}</strong> vinculado a la reserva <strong>{{ reservaSeleccionada.codigo_reserva }}</strong> y quedará en cola de <strong>Cobros Offline (CU22)</strong> para sincronizarse en <strong>CU23</strong>.
+          </p>
+
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px;">
+            <div>
+              <label style="display: block; font-size: 12px; font-weight: 700; color: #78350f; margin-bottom: 4px;">NIT / CI del Cliente:</label>
+              <input type="text" [(ngModel)]="clienteNitOffline" style="width: 100%; padding: 8px 10px; border: 1px solid #fcd34d; border-radius: 8px; font-weight: 600;" />
+            </div>
+            <div>
+              <label style="display: block; font-size: 12px; font-weight: 700; color: #78350f; margin-bottom: 4px;">Efectivo Recibido (Bs.) *:</label>
+              <input type="number" [(ngModel)]="efectivoRecibidoOffline" (input)="calcularCambioOffline()" min="0" step="5" style="width: 100%; padding: 8px 10px; border: 1px solid #fcd34d; border-radius: 8px; font-weight: 800; color: #047857;" />
+            </div>
+            <div>
+              <label style="display: block; font-size: 12px; font-weight: 700; color: #78350f; margin-bottom: 4px;">Cambio a Devolver:</label>
+              <div style="padding: 8px 12px; background: #ecfdf5; border: 1px solid #6ee7b7; border-radius: 8px; font-weight: 800; color: #047857;">
+                Bs. {{ cambioOffline | number:'1.2-2' }}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ========================================================================= -->
+        <!-- TICKET PROVISIONAL EMITIDO TRAS EL PAGO OFFLINE DE LA RESERVA             -->
+        <!-- ========================================================================= -->
+        <div *ngIf="reciboOfflineEmitido" style="margin-top: 18px; background: #f0fdf4; border: 2px solid #10b981; border-radius: 12px; padding: 18px; text-align: center;">
+          <mat-icon style="color: #059669; font-size: 36px; width: 36px; height: 36px;">check_circle</mat-icon>
+          <h4 style="margin: 6px 0 4px 0; color: #065f46; font-size: 16px;">¡Pago Offline de Reserva Registrado con Éxito!</h4>
+          <p style="margin: 0 0 12px 0; font-size: 13px; color: #047857;">
+            Recibo Provisional <strong>{{ reciboOfflineEmitido.nro_recibo_provisional }}</strong> emitido para <strong>{{ tenantNombre }}</strong>.
+            Ya figura en <strong>Cobros Offline (CU22)</strong> listo para sincronizar en <strong>CU23</strong>.
+          </p>
+          <div style="display: flex; justify-content: center; gap: 10px;">
+            <button type="button" (click)="imprimirReciboOffline()" style="background: #059669; color: white; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+              <mat-icon>print</mat-icon>
+              <span>Imprimir Comprobante Provisional</span>
+            </button>
+            <button type="button" routerLink="/admin/cobros-offline" (click)="cerrarModal()" style="background: #0f172a; color: white; border: none; padding: 8px 16px; border-radius: 8px; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 6px;">
+              <mat-icon>payments</mat-icon>
+              <span>Ver en Cobros Offline (CU22)</span>
+            </button>
+          </div>
+        </div>
       </div>
 
       <div class="modal-footer">
@@ -244,9 +315,9 @@
           Cerrar
         </button>
 
-        <div *ngIf="reservaSeleccionada.estado === 'PENDIENTE' || reservaSeleccionada.estado === 'PAGADA'" class="action-buttons-group">
+        <div *ngIf="(reservaSeleccionada.estado === 'PENDIENTE' || reservaSeleccionada.estado === 'PAGADA') && !reciboOfflineEmitido" class="action-buttons-group">
           <button
-            *ngIf="reservaSeleccionada.estado === 'PENDIENTE'"
+            *ngIf="reservaSeleccionada.estado === 'PENDIENTE' && !modoPagoOffline"
             type="button"
             class="btn-reject"
             (click)="procesarEntrega('CANCELAR')"
@@ -256,7 +327,32 @@
             <span>Cancelar Reserva</span>
           </button>
 
+          <!-- Botón para activar el Pago Offline de la Reserva en Caja (CU22) -->
           <button
+            *ngIf="reservaSeleccionada.estado === 'PENDIENTE' && !modoPagoOffline"
+            type="button"
+            (click)="activarModoPagoOffline()"
+            [disabled]="procesandoAccion"
+            style="display: flex; align-items: center; gap: 6px; background: #f59e0b; color: #ffffff; border: none; padding: 10px 16px; border-radius: 8px; font-weight: 700; cursor: pointer;"
+          >
+            <mat-icon>wifi_off</mat-icon>
+            <span>Pago Offline (Contingencia CU22)</span>
+          </button>
+
+          <!-- Botón para confirmar el Pago Offline cuando el sub-panel está activo -->
+          <button
+            *ngIf="reservaSeleccionada.estado === 'PENDIENTE' && modoPagoOffline"
+            type="button"
+            (click)="confirmarPagoOfflineReserva()"
+            [disabled]="procesandoAccion || efectivoRecibidoOffline < reservaSeleccionada.total_estimado"
+            style="display: flex; align-items: center; gap: 6px; background: #d97706; color: #ffffff; border: none; padding: 10px 18px; border-radius: 8px; font-weight: 800; cursor: pointer;"
+          >
+            <mat-icon>receipt_long</mat-icon>
+            <span>{{ procesandoAccion ? 'Registrando...' : 'Confirmar Pago Offline y Emitir Recibo' }}</span>
+          </button>
+
+          <button
+            *ngIf="!modoPagoOffline"
             type="button"
             class="btn-confirm-delivery"
             [class.btn-paid-delivery]="reservaSeleccionada.estado === 'PAGADA'"
@@ -264,7 +360,7 @@
             [disabled]="procesandoAccion"
           >
             <mat-icon>{{ reservaSeleccionada.estado === 'PAGADA' ? 'local_mall' : 'point_of_sale' }}</mat-icon>
-            <span>{{ reservaSeleccionada.estado === 'PAGADA' ? 'Confirmar Entrega de Prendas' : 'Cobrar y Entregar en Tienda' }}</span>
+            <span>{{ reservaSeleccionada.estado === 'PAGADA' ? 'Confirmar Entrega de Prendas' : 'Cobrar y Entregar (En Línea)' }}</span>
           </button>
         </div>
       </div>

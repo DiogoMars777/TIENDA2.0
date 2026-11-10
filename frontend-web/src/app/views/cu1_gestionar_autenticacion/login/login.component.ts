@@ -51,7 +51,9 @@ export class LoginComponent {
         const rol = (response.rol || 'CLIENTE').toUpperCase();
         
         // Redirigir según el rol del usuario
-        if (rol === 'ADMIN' || rol === 'ADMINISTRADOR' || rol === 'SUPERVISOR') {
+        if (rol === 'SUPERADMIN' || (response as any).es_superadmin) {
+          this.router.navigate(['/admin/suscripciones-tenants']);
+        } else if (rol === 'ADMIN' || rol === 'ADMINISTRADOR' || rol === 'SUPERVISOR') {
           this.router.navigate(['/admin/users']);
         } else {
           this.router.navigate(['/catalogo']);

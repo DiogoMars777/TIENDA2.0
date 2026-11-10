@@ -62,6 +62,7 @@ class SuscripcionTenantService:
             limite_sucursales=data.limite_sucursales,
             limite_usuarios=data.limite_usuarios,
             limite_productos=data.limite_productos,
+            habilitar_reportes_ia=data.habilitar_reportes_ia,
             habilitar_vestidor_ia=data.habilitar_vestidor_ia,
             activo=data.activo,
             fechacreacion=datetime.utcnow()
@@ -113,6 +114,8 @@ class SuscripcionTenantService:
             plan.limite_usuarios = data.limite_usuarios
         if data.limite_productos is not None:
             plan.limite_productos = data.limite_productos
+        if data.habilitar_reportes_ia is not None:
+            plan.habilitar_reportes_ia = data.habilitar_reportes_ia
         if data.habilitar_vestidor_ia is not None:
             plan.habilitar_vestidor_ia = data.habilitar_vestidor_ia
         if data.activo is not None:
@@ -221,9 +224,40 @@ class SuscripcionTenantService:
                     "limite_sucursales": t.plan.limite_sucursales,
                     "limite_usuarios": t.plan.limite_usuarios,
                     "limite_productos": t.plan.limite_productos,
+                    "habilitar_reportes_ia": bool(getattr(t.plan, "habilitar_reportes_ia", False) or getattr(t.plan, "habilitar_vestidor_ia", False)),
                     "habilitar_vestidor_ia": t.plan.habilitar_vestidor_ia,
                     "activo": t.plan.activo,
                     "fechacreacion": t.plan.fechacreacion
+                }
+
+            # Buscar el usuario Administrador asignado a este Tenant
+            from app.models.cu1_gestionar_autenticacion.usuario_rol_model import RolModel
+            admin_usr = (
+                db.query(UsuarioModel)
+                .join(RolModel, UsuarioModel.rolid == RolModel.id)
+                .filter(
+                    UsuarioModel.tenant_id == t.id,
+                    RolModel.nombre.in_(["ADMIN", "ADMINISTRADOR"])
+                )
+                .order_by(UsuarioModel.id.asc())
+                .first()
+            )
+            if not admin_usr:
+                admin_usr = (
+                    db.query(UsuarioModel)
+                    .filter(UsuarioModel.tenant_id == t.id, UsuarioModel.rolid == 1)
+                    .order_by(UsuarioModel.id.asc())
+                    .first()
+                )
+
+            admin_dict = None
+            if admin_usr:
+                admin_dict = {
+                    "id": admin_usr.id,
+                    "nombre": admin_usr.nombre,
+                    "apellido": admin_usr.apellido or "",
+                    "email": admin_usr.email,
+                    "activo": admin_usr.activo
                 }
 
             resultado.append({
@@ -242,7 +276,8 @@ class SuscripcionTenantService:
                 "activo": t.activo,
                 "fechacreacion": t.fechacreacion,
                 "suscripcion_actual": susc_dict,
-                "metricas_uso": metricas
+                "metricas_uso": metricas,
+                "administrador": admin_dict
             })
 
         return resultado
@@ -332,6 +367,52 @@ class SuscripcionTenantService:
             metodo_pago="ALTA_INICIAL"
         )
         db.add(suscripcion)
+
+        # Crear sucursal principal inicial para el nuevo tenant
+        sucursal_inicial = SucursalModel(
+            tenant_id=nuevo_tenant.id,
+            nombre=f"Sucursal Central - {nuevo_tenant.nombre}",
+            ciudad="Santa Cruz",
+            direccion=data.direccion_fiscal or "Av. Principal #100",
+            telefono=data.telefono_contacto or "70000000",
+            activo=True
+        )
+        db.add(sucursal_inicial)
+        db.flush()
+
+        # Crear usuario Administrador del Tenant
+        from app.core.security import get_password_hash
+        from app.models.cu1_gestionar_autenticacion.usuario_rol_model import RolModel
+        admin_rol = db.query(RolModel).filter(RolModel.nombre == "ADMIN").first()
+        rol_admin_id = admin_rol.id if admin_rol else 1
+
+        email_admin = (data.admin_email or data.email_contacto).strip().lower()
+        pass_admin = (data.admin_password or "Admin123.").strip()
+        nombre_admin = (data.admin_nombre or f"Admin {nuevo_tenant.nombre}").strip()
+        apellido_admin = (data.admin_apellido or "Gerencia").strip()
+
+        usr_existente = db.query(UsuarioModel).filter(func.lower(UsuarioModel.email) == email_admin).first()
+        if not usr_existente:
+            nuevo_admin = UsuarioModel(
+                tenant_id=nuevo_tenant.id,
+                nombre=nombre_admin,
+                apellido=apellido_admin,
+                email=email_admin,
+                passwordhash=get_password_hash(pass_admin),
+                telefono=data.telefono_contacto,
+                rolid=rol_admin_id,
+                sucursalid=sucursal_inicial.id,
+                activo=True,
+                verificado=True
+            )
+            db.add(nuevo_admin)
+        else:
+            usr_existente.tenant_id = nuevo_tenant.id
+            usr_existente.rolid = rol_admin_id
+            usr_existente.passwordhash = get_password_hash(pass_admin)
+            usr_existente.activo = True
+            usr_existente.verificado = True
+
         db.commit()
         db.refresh(nuevo_tenant)
 
@@ -491,6 +572,76 @@ class SuscripcionTenantService:
             datos_nuevos={"monto": float(monto), "nueva_fecha_fin": nueva_fecha_fin.isoformat()}
         )
         return nueva_susc
+
+    @staticmethod
+    def asignar_administrador_tenant(
+        db: Session,
+        tenant_id: int,
+        nombre: str,
+        apellido: Optional[str],
+        email: str,
+        password: str,
+        usuario_id: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """Crea o actualiza el usuario Administrador de un Tenant específico."""
+        from app.core.security import get_password_hash
+        from app.models.cu1_gestionar_autenticacion.usuario_rol_model import RolModel
+
+        tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+        if not tenant:
+            raise ValueError(f"Tenant con ID {tenant_id} no encontrado.")
+
+        clean_email = email.strip().lower()
+        clean_pass = (password or "Admin123.").strip()
+
+        admin_rol = db.query(RolModel).filter(RolModel.nombre == "ADMIN").first()
+        rol_admin_id = admin_rol.id if admin_rol else 1
+
+        usuario = db.query(UsuarioModel).filter(func.lower(UsuarioModel.email) == clean_email).first()
+        if usuario:
+            usuario.tenant_id = tenant.id
+            usuario.nombre = nombre.strip()
+            usuario.apellido = (apellido or "").strip()
+            usuario.passwordhash = get_password_hash(clean_pass)
+            usuario.rolid = rol_admin_id
+            usuario.activo = True
+            usuario.verificado = True
+        else:
+            sucursal = db.query(SucursalModel).filter(SucursalModel.tenant_id == tenant.id).first()
+            usuario = UsuarioModel(
+                tenant_id=tenant.id,
+                nombre=nombre.strip(),
+                apellido=(apellido or "").strip(),
+                email=clean_email,
+                passwordhash=get_password_hash(clean_pass),
+                rolid=rol_admin_id,
+                sucursalid=sucursal.id if sucursal else None,
+                activo=True,
+                verificado=True
+            )
+            db.add(usuario)
+
+        tenant.email_contacto = clean_email
+        db.commit()
+        db.refresh(usuario)
+
+        BitacoraController.registrar_evento(
+            db=db,
+            accion="ASIGNAR_ADMIN",
+            modulo="TENANTS_SAAS",
+            usuario_id=usuario_id,
+            detalle=f"Administrador '{usuario.email}' asignado a la empresa '{tenant.nombre}' (Tenant #{tenant.id}).",
+            datos_nuevos={"tenant_id": tenant.id, "admin_email": usuario.email, "admin_nombre": usuario.nombre}
+        )
+
+        return {
+            "id": usuario.id,
+            "nombre": usuario.nombre,
+            "apellido": usuario.apellido,
+            "email": usuario.email,
+            "tenant_id": tenant.id,
+            "tenant_nombre": tenant.nombre
+        }
 
     @staticmethod
     def obtener_kpis_saas(db: Session) -> Dict[str, Any]:

@@ -209,45 +209,31 @@ class BitacoraController:
     def obtener_estadisticas(db: Session, tenant_id: Optional[int] = None) -> Dict[str, Any]:
         """
         Calcula indicadores clave de seguridad y actividad para la cabecera del módulo.
+        Si tenant_id es None (vista SUPERADMIN), calcula las métricas globales de toda la plataforma.
         """
-        tenant_id = tenant_id or 1
         ahora = get_bolivia_now()
         inicio_hoy = datetime(ahora.year, ahora.month, ahora.day)
         hace_7_dias = ahora - timedelta(days=7)
         hace_30_dias = ahora - timedelta(days=30)
 
-        total_hoy = db.query(func.count(BitacoraModel.id)).filter(
-            BitacoraModel.tenant_id == tenant_id,
-            BitacoraModel.fechahora >= inicio_hoy
-        ).scalar() or 0
+        q_hoy = db.query(func.count(BitacoraModel.id)).filter(BitacoraModel.fechahora >= inicio_hoy)
+        q_sem = db.query(func.count(BitacoraModel.id)).filter(BitacoraModel.fechahora >= hace_7_dias)
+        q_mes = db.query(func.count(BitacoraModel.id)).filter(BitacoraModel.fechahora >= hace_30_dias)
+        q_mod = db.query(BitacoraModel.modulo, func.count(BitacoraModel.id)).filter(BitacoraModel.fechahora >= hace_30_dias)
+        q_acc = db.query(BitacoraModel.accion, func.count(BitacoraModel.id)).filter(BitacoraModel.fechahora >= hace_30_dias)
 
-        total_semana = db.query(func.count(BitacoraModel.id)).filter(
-            BitacoraModel.tenant_id == tenant_id,
-            BitacoraModel.fechahora >= hace_7_dias
-        ).scalar() or 0
+        if tenant_id is not None:
+            q_hoy = q_hoy.filter(BitacoraModel.tenant_id == tenant_id)
+            q_sem = q_sem.filter(BitacoraModel.tenant_id == tenant_id)
+            q_mes = q_mes.filter(BitacoraModel.tenant_id == tenant_id)
+            q_mod = q_mod.filter(BitacoraModel.tenant_id == tenant_id)
+            q_acc = q_acc.filter(BitacoraModel.tenant_id == tenant_id)
 
-        total_mes = db.query(func.count(BitacoraModel.id)).filter(
-            BitacoraModel.tenant_id == tenant_id,
-            BitacoraModel.fechahora >= hace_30_dias
-        ).scalar() or 0
-
-        modulos_rows = db.query(
-            BitacoraModel.modulo,
-            func.count(BitacoraModel.id)
-        ).filter(
-            BitacoraModel.tenant_id == tenant_id,
-            BitacoraModel.fechahora >= hace_30_dias
-        ).group_by(BitacoraModel.modulo).all()
-        modulos_dist = {row[0]: row[1] for row in modulos_rows}
-
-        acciones_rows = db.query(
-            BitacoraModel.accion,
-            func.count(BitacoraModel.id)
-        ).filter(
-            BitacoraModel.tenant_id == tenant_id,
-            BitacoraModel.fechahora >= hace_30_dias
-        ).group_by(BitacoraModel.accion).all()
-        acciones_dist = {row[0]: row[1] for row in acciones_rows}
+        total_hoy = q_hoy.scalar() or 0
+        total_semana = q_sem.scalar() or 0
+        total_mes = q_mes.scalar() or 0
+        modulos_dist = {row[0]: row[1] for row in q_mod.group_by(BitacoraModel.modulo).all()}
+        acciones_dist = {row[0]: row[1] for row in q_acc.group_by(BitacoraModel.accion).all()}
 
         return {
             "total_hoy": total_hoy,

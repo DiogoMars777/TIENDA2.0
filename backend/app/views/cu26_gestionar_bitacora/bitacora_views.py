@@ -19,7 +19,24 @@ from app.schemas.cu26_gestionar_bitacora.bitacora_schema import (
 router = APIRouter(prefix="/bitacora", tags=["CU26 - Bitácora y Auditoría del Sistema (Web)"])
 
 
-@router.get("", response_model=BitacoraListResponse, summary="Listar registros de auditoría")
+def _require_superadmin(current_user: UsuarioModel, db: Session):
+    """Restringe la consulta de la Bitácora exclusivamente al SUPERADMIN del sistema."""
+    rol_nombre = ""
+    if current_user.rol and current_user.rol.nombre:
+        rol_nombre = current_user.rol.nombre.strip().upper()
+    elif current_user.rolid:
+        from app.models.models import RolModel
+        r = db.query(RolModel).filter(RolModel.id == current_user.rolid).first()
+        if r and r.nombre:
+            rol_nombre = r.nombre.strip().upper()
+    if rol_nombre != "SUPERADMIN":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acceso denegado: La Bitácora del Sistema es exclusiva del Administrador General (SUPERADMIN)."
+        )
+
+
+@router.get("", response_model=BitacoraListResponse, summary="Listar registros de auditoría (Solo SUPERADMIN)")
 def listar_bitacora(
     fecha_inicio: Optional[datetime] = Query(None, description="Fecha de inicio (ISO 8601)"),
     fecha_fin: Optional[datetime] = Query(None, description="Fecha de fin (ISO 8601)"),
@@ -32,8 +49,8 @@ def listar_bitacora(
     db: Session = Depends(get_db),
     current_user: UsuarioModel = Depends(get_current_tenant_user)
 ):
-    """Retorna el historial paginado de bitácora con capacidades de filtrado multicriterio."""
-    tenant_id = getattr(current_user, 'tenant_id', 1) or 1
+    """Retorna el historial paginado global de bitácora (Exclusivo SUPERADMIN)."""
+    _require_superadmin(current_user, db)
     return BitacoraController.listar(
         db=db,
         fecha_inicio=fecha_inicio,
@@ -44,21 +61,21 @@ def listar_bitacora(
         search=search,
         limit=limit,
         offset=offset,
-        tenant_id=tenant_id
+        tenant_id=None
     )
 
 
-@router.get("/estadisticas", response_model=BitacoraStatsResponse, summary="Obtener KPIs y métricas de auditoría")
+@router.get("/estadisticas", response_model=BitacoraStatsResponse, summary="Obtener KPIs y métricas de auditoría (Solo SUPERADMIN)")
 def obtener_estadisticas_bitacora(
     db: Session = Depends(get_db),
     current_user: UsuarioModel = Depends(get_current_tenant_user)
 ):
-    """Retorna indicadores clave: eventos de hoy, semana, mes y distribución por módulo y acción."""
-    tenant_id = getattr(current_user, 'tenant_id', 1) or 1
-    return BitacoraController.obtener_estadisticas(db=db, tenant_id=tenant_id)
+    """Retorna indicadores clave globales de bitácora (Exclusivo SUPERADMIN)."""
+    _require_superadmin(current_user, db)
+    return BitacoraController.obtener_estadisticas(db=db, tenant_id=None)
 
 
-@router.get("/exportar", summary="Exportar registros filtrados a archivo CSV")
+@router.get("/exportar", summary="Exportar registros filtrados a archivo CSV (Solo SUPERADMIN)")
 def exportar_bitacora_csv(
     fecha_inicio: Optional[datetime] = Query(None),
     fecha_fin: Optional[datetime] = Query(None),
@@ -69,8 +86,8 @@ def exportar_bitacora_csv(
     db: Session = Depends(get_db),
     current_user: UsuarioModel = Depends(get_current_tenant_user)
 ):
-    """Genera y descarga un archivo CSV con los registros de auditoría."""
-    tenant_id = getattr(current_user, 'tenant_id', 1) or 1
+    """Genera y descarga un archivo CSV con los registros de auditoría (Exclusivo SUPERADMIN)."""
+    _require_superadmin(current_user, db)
     csv_data = BitacoraController.exportar_csv(
         db=db,
         fecha_inicio=fecha_inicio,
@@ -79,7 +96,7 @@ def exportar_bitacora_csv(
         accion=accion,
         usuario_id=usuario_id,
         search=search,
-        tenant_id=tenant_id
+        tenant_id=None
     )
 
     filename = f"bitacora_auditoria_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"

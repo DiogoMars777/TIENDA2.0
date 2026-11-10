@@ -14,7 +14,7 @@
     </div>
 
     <div class="header-actions">
-      <button class="btn btn-secondary" (click)="ctrl.abrirModalNuevoPlan()" id="btn-nuevo-plan">
+      <button class="btn btn-secondary" (click)="abrirModalNuevoPlan()" id="btn-nuevo-plan">
         <mat-icon>add_circle_outline</mat-icon>
         <span>Nuevo Plan</span>
       </button>
@@ -151,6 +151,7 @@
         <thead>
           <tr>
             <th>EMPRESA / INQUILINO</th>
+            <th>ADMINISTRADOR DEL TENANT</th>
             <th>PLAN ASIGNADO</th>
             <th>CUOTA DE SUCURSALES</th>
             <th>CUOTA DE COLABORADORES</th>
@@ -173,6 +174,20 @@
                   </span>
                   <span class="tenant-sub" *ngIf="t.nit_ruc">NIT: {{ t.nit_ruc }}</span>
                 </div>
+              </div>
+            </td>
+
+            <!-- Administrador del Tenant -->
+            <td>
+              <div class="tenant-meta" *ngIf="t.administrador as adm">
+                <span class="tenant-name" style="font-size: 13px;">{{ adm.nombre }} {{ adm.apellido }}</span>
+                <span class="tenant-slug" style="color: #2563eb; font-weight: 600;">
+                  <mat-icon class="slug-icon">person</mat-icon>
+                  {{ adm.email }}
+                </span>
+              </div>
+              <div class="tenant-meta" *ngIf="!t.administrador">
+                <span class="text-muted" style="font-size: 12px;">{{ t.email_contacto }}</span>
               </div>
             </td>
 
@@ -246,6 +261,12 @@
               <div class="action-buttons">
                 <button 
                   class="btn-icon" 
+                  title="Asignar / Cambiar Administrador del Tenant"
+                  (click)="abrirModalAdmin(t)">
+                  <mat-icon>manage_accounts</mat-icon>
+                </button>
+                <button 
+                  class="btn-icon" 
                   title="Cambiar Plan (Upgrade/Downgrade)"
                   (click)="ctrl.abrirModalCambiarPlan(t)">
                   <mat-icon>swap_horiz</mat-icon>
@@ -269,7 +290,7 @@
           </tr>
 
           <tr *ngIf="ctrl.tenantsFiltrados().length === 0">
-            <td colspan="7" class="empty-row">
+            <td colspan="8" class="empty-row">
               <mat-icon>search_off</mat-icon>
               <p>No se encontraron empresas con el criterio de búsqueda especificado.</p>
             </td>
@@ -280,14 +301,14 @@
   </section>
 
   <!-- ========================================================================= -->
-  <!-- TAB 2: PLANES COMERCIALES                                                 -->
+  <!-- TAB 2: PLANES COMERCIALES (TABLA OFICIAL SECCIÓN 9.4 DEL EXAMEN)          -->
   <!-- ========================================================================= -->
   <section *ngIf="ctrl.tabActiva() === 'planes'" class="tab-content">
     <div class="planes-grid">
       <div class="plan-card" *ngFor="let p of ctrl.planes()" [class.featured-plan]="p.precio_mensual >= 200">
         <div class="plan-card-header">
           <div>
-            <span class="plan-tier-badge">{{ p.nombre }}</span>
+            <span class="plan-tier-badge">PLAN SAAS</span>
             <h3 class="plan-title">{{ p.nombre }}</h3>
           </div>
           <span class="badge-status" [class.badge-active]="p.activo" [class.badge-suspended]="!p.activo">
@@ -308,35 +329,43 @@
         <ul class="plan-features-list">
           <li>
             <mat-icon class="feature-icon text-success">check_circle</mat-icon>
-            <span>Hasta <strong>{{ p.limite_sucursales }}</strong> sucursales físicas</span>
+            <span><strong>Sucursales activas:</strong> Hasta <strong>{{ p.limite_sucursales }}</strong></span>
           </li>
           <li>
             <mat-icon class="feature-icon text-success">check_circle</mat-icon>
-            <span>Hasta <strong>{{ p.limite_usuarios }}</strong> cuentas de usuario</span>
+            <span><strong>Gestión de productos:</strong> Sí (Hasta {{ p.limite_productos }} prendas)</span>
           </li>
           <li>
             <mat-icon class="feature-icon text-success">check_circle</mat-icon>
-            <span>Catálogo de hasta <strong>{{ p.limite_productos }}</strong> modelos de poleras</span>
+            <span><strong>Gestión de ventas (POS y Digital):</strong> Sí</span>
+          </li>
+          <li>
+            <mat-icon class="feature-icon text-success">check_circle</mat-icon>
+            <span><strong>Reservas de prendas:</strong> Sí</span>
+          </li>
+          <li>
+            <mat-icon class="feature-icon text-success">check_circle</mat-icon>
+            <span><strong>Operación offline (PWA & Móvil):</strong> Sí</span>
+          </li>
+          <li>
+            <mat-icon class="feature-icon text-success">check_circle</mat-icon>
+            <span><strong>Reportes convencionales:</strong> Sí</span>
           </li>
           <li>
             <mat-icon 
               class="feature-icon" 
-              [class.text-success]="p.habilitar_vestidor_ia" 
-              [class.text-muted]="!p.habilitar_vestidor_ia">
-              {{ p.habilitar_vestidor_ia ? 'check_circle' : 'cancel' }}
+              [class.text-success]="p.habilitar_reportes_ia ?? p.habilitar_vestidor_ia" 
+              [class.text-danger]="!(p.habilitar_reportes_ia ?? p.habilitar_vestidor_ia)">
+              {{ (p.habilitar_reportes_ia ?? p.habilitar_vestidor_ia) ? 'check_circle' : 'cancel' }}
             </mat-icon>
-            <span [class.text-muted]="!p.habilitar_vestidor_ia">
-              Vestidor Virtual con IA (CU12)
+            <span [class.text-muted]="!(p.habilitar_reportes_ia ?? p.habilitar_vestidor_ia)">
+              <strong>Reportes generativos con IA:</strong> {{ (p.habilitar_reportes_ia ?? p.habilitar_vestidor_ia) ? 'Sí' : 'No' }}
             </span>
-          </li>
-          <li>
-            <mat-icon class="feature-icon text-success">check_circle</mat-icon>
-            <span>Auditoría de Bitácora (CU26)</span>
           </li>
         </ul>
 
         <div class="plan-card-footer">
-          <button class="btn btn-outline" (click)="ctrl.abrirModalEditarPlan(p)">
+          <button class="btn btn-outline" (click)="abrirModalEditarPlan(p)">
             <mat-icon>edit</mat-icon>
             <span>Modificar Condiciones</span>
           </button>
@@ -416,7 +445,7 @@
             <label>Plan Comercial a Asignar *</label>
             <select [(ngModel)]="nuevoTenantForm.plan_id">
               <option *ngFor="let p of ctrl.planes()" [value]="p.id">
-                {{ p.nombre }} - Bs. {{ p.precio_mensual }}/mes ({{ p.limite_sucursales }} sucursales, {{ p.limite_usuarios }} usuarios)
+                {{ p.nombre }} - Bs. {{ p.precio_mensual }}/mes (Hasta {{ p.limite_sucursales }} sucursales, IA: {{ (p.habilitar_reportes_ia ?? p.habilitar_vestidor_ia) ? 'Sí' : 'No' }})
               </option>
             </select>
           </div>
@@ -428,6 +457,42 @@
               <option [value]="12">12 Meses (Anual - Recomendado)</option>
               <option [value]="24">24 Meses (Bienal con descuento)</option>
             </select>
+          </div>
+
+          <div class="form-group full-width" style="margin-top: 8px; padding-top: 12px; border-top: 1px dashed #cbd5e1;">
+            <strong style="font-size: 13px; color: #0f172a;">👤 Credenciales del Administrador de esta Empresa (Tenant)</strong>
+          </div>
+
+          <div class="form-group">
+            <label>Nombre del Administrador *</label>
+            <input 
+              type="text" 
+              [(ngModel)]="nuevoTenantForm.admin_nombre" 
+              placeholder="Ej. Carlos" />
+          </div>
+
+          <div class="form-group">
+            <label>Apellido del Administrador</label>
+            <input 
+              type="text" 
+              [(ngModel)]="nuevoTenantForm.admin_apellido" 
+              placeholder="Ej. Mendoza" />
+          </div>
+
+          <div class="form-group">
+            <label>Correo de Inicio de Sesión (Login) *</label>
+            <input 
+              type="email" 
+              [(ngModel)]="nuevoTenantForm.admin_email" 
+              placeholder="admin@miempresa.com" />
+          </div>
+
+          <div class="form-group">
+            <label>Contraseña Inicial *</label>
+            <input 
+              type="text" 
+              [(ngModel)]="nuevoTenantForm.admin_password" 
+              placeholder="Admin123." />
           </div>
         </div>
       </div>
@@ -623,8 +688,8 @@
 
           <div class="form-group full-width checkbox-row">
             <label class="custom-checkbox">
-              <input type="checkbox" [(ngModel)]="planForm.habilitar_vestidor_ia" />
-              <span>Habilitar Módulo de Vestidor Virtual con IA (CU12)</span>
+              <input type="checkbox" [(ngModel)]="planForm.habilitar_reportes_ia" />
+              <span>Habilitar Reportes Generativos con IA (CU20) — Exclusivo Plan Profesional</span>
             </label>
           </div>
 
@@ -646,6 +711,62 @@
           <mat-icon *ngIf="!ctrl.guardando()">save</mat-icon>
           <mat-icon *ngIf="ctrl.guardando()" class="spin-icon">autorenew</mat-icon>
           <span>{{ ctrl.guardando() ? 'Guardando...' : 'Guardar Plan' }}</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- MODAL 5: ASIGNAR / CAMBIAR ADMINISTRADOR DEL TENANT                       -->
+  <!-- ========================================================================= -->
+  <div class="modal-backdrop" *ngIf="ctrl.modalAsignarAdminAbierto()">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <mat-icon>manage_accounts</mat-icon>
+          <h3>Asignar Administrador de la Empresa</h3>
+        </div>
+        <button class="modal-btn-close" (click)="ctrl.cerrarModalAsignarAdmin()">✕</button>
+      </div>
+
+      <div class="modal-body" *ngIf="ctrl.tenantSeleccionado() as t">
+        <div class="info-callout">
+          <p>Empresa (Tenant): <strong>{{ t.nombre }}</strong> ({{ t.slug }}.goldenstore.com)</p>
+          <p>Plan actual: <strong>{{ t.plan?.nombre }}</strong> — Este administrador tendrá acceso únicamente a los datos y módulos de su negocio según su plan.</p>
+        </div>
+
+        <div class="form-grid mt-4">
+          <div class="form-group">
+            <label>Nombre del Administrador *</label>
+            <input type="text" [(ngModel)]="adminTenantForm.nombre" placeholder="Ej. Carlos" />
+          </div>
+
+          <div class="form-group">
+            <label>Apellido</label>
+            <input type="text" [(ngModel)]="adminTenantForm.apellido" placeholder="Ej. Mendoza" />
+          </div>
+
+          <div class="form-group full-width">
+            <label>Correo Electrónico de Inicio de Sesión (Login) *</label>
+            <input type="email" [(ngModel)]="adminTenantForm.email" placeholder="admin@empresa.com" />
+          </div>
+
+          <div class="form-group full-width">
+            <label>Contraseña de Acceso *</label>
+            <input type="text" [(ngModel)]="adminTenantForm.password" placeholder="Admin123." />
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary" (click)="ctrl.cerrarModalAsignarAdmin()">Cancelar</button>
+        <button 
+          class="btn btn-primary" 
+          [disabled]="ctrl.guardando() || !adminTenantForm.nombre || !adminTenantForm.email || !adminTenantForm.password"
+          (click)="confirmarAsignarAdmin()">
+          <mat-icon *ngIf="!ctrl.guardando()">verified_user</mat-icon>
+          <mat-icon *ngIf="ctrl.guardando()" class="spin-icon">autorenew</mat-icon>
+          <span>{{ ctrl.guardando() ? 'Asignando...' : 'Guardar Administrador del Tenant' }}</span>
         </button>
       </div>
     </div>

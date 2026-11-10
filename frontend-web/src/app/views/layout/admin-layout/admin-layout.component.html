@@ -3,146 +3,168 @@
   <mat-sidenav #sidenav mode="side" opened class="admin-sidenav">
     <div class="brand-header">
       <div class="brand-logo">
-        <mat-icon>checkroom</mat-icon>
+        <mat-icon>{{ isSuperAdmin ? 'cloud_done' : 'checkroom' }}</mat-icon>
       </div>
       <div class="brand-text">
-        <h2>Shopyn Golden Store</h2>
-        <span class="badge-admin">SHOPYN GOLDEN ERP</span>
+        <h2>{{ isSuperAdmin ? 'FashionStore SaaS' : tenantNombre }}</h2>
+        <span class="badge-admin">
+          {{ isSuperAdmin ? 'ADMIN GENERAL DEL SISTEMA' : ('PLAN ' + (planNombre | uppercase) + ' · MÁX ' + limiteSucursales + ' SUC.') }}
+        </span>
       </div>
     </div>
 
     <mat-divider></mat-divider>
 
-    <!-- Menú Principal -->
-    <div class="nav-section-title">ADMINISTRACIÓN & SEGURIDAD</div>
-    <mat-nav-list class="nav-list">
-      <a mat-list-item routerLink="/dashboard" id="nav-dashboard">
-        <mat-icon matListItemIcon>space_dashboard</mat-icon>
-        <span matListItemTitle>Dashboard</span>
-      </a>
+    <!-- ======================================================================= -->
+    <!-- VISTA 1: MENÚ EXCLUSIVO DEL ADMINISTRADOR GENERAL DEL SISTEMA (SAAS)   -->
+    <!-- ======================================================================= -->
+    <ng-container *ngIf="isSuperAdmin">
+      <div class="nav-section-title">PLATAFORMA SAAS MULTI-TENANT</div>
+      <mat-nav-list class="nav-list">
+        <a mat-list-item routerLink="/admin/suscripciones-tenants" routerLinkActive="active-link" id="nav-suscripciones">
+          <mat-icon matListItemIcon>domain</mat-icon>
+          <span matListItemTitle>Dashboard & Empresas (CU21)</span>
+        </a>
 
-      <a mat-list-item routerLink="/admin/users" routerLinkActive="active-link" id="nav-users">
-        <mat-icon matListItemIcon>people_alt</mat-icon>
-        <span matListItemTitle>Usuarios</span>
-      </a>
+        <a mat-list-item routerLink="/admin/bitacora" routerLinkActive="active-link" id="nav-bitacora-global">
+          <mat-icon matListItemIcon>history_edu</mat-icon>
+          <span matListItemTitle>Bitácora Global (CU26)</span>
+        </a>
+      </mat-nav-list>
+    </ng-container>
 
-      <a mat-list-item routerLink="/admin/roles" routerLinkActive="active-link" id="nav-roles">
-        <mat-icon matListItemIcon>admin_panel_settings</mat-icon>
-        <span matListItemTitle>Roles y Permisos</span>
-      </a>
+    <!-- ======================================================================= -->
+    <!-- VISTA 2: MENÚ DEL ADMINISTRADOR DE EMPRESA / TENANT (SEGÚN SU PLAN)     -->
+    <!-- ======================================================================= -->
+    <ng-container *ngIf="!isSuperAdmin">
+      <!-- Menú Principal del Negocio -->
+      <div class="nav-section-title">ADMINISTRACIÓN & SEGURIDAD</div>
+      <mat-nav-list class="nav-list">
+        <a mat-list-item routerLink="/admin/dashboard" routerLinkActive="active-link" id="nav-dashboard">
+          <mat-icon matListItemIcon>space_dashboard</mat-icon>
+          <span matListItemTitle>Dashboard (Reportes)</span>
+        </a>
 
-      <a mat-list-item routerLink="/admin/bitacora" routerLinkActive="active-link" id="nav-bitacora">
-        <mat-icon matListItemIcon>history_edu</mat-icon>
-        <span matListItemTitle>Bitácora (CU26)</span>
-      </a>
-    </mat-nav-list>
+        <a mat-list-item routerLink="/admin/users" routerLinkActive="active-link" id="nav-users">
+          <mat-icon matListItemIcon>people_alt</mat-icon>
+          <span matListItemTitle>Usuarios</span>
+        </a>
 
-    <mat-divider></mat-divider>
+        <a mat-list-item routerLink="/admin/roles" routerLinkActive="active-link" id="nav-roles">
+          <mat-icon matListItemIcon>admin_panel_settings</mat-icon>
+          <span matListItemTitle>Roles y Permisos</span>
+        </a>
+      </mat-nav-list>
 
-    <!-- Módulo T-Shirt Retail Fashion -->
-    <div class="nav-section-title">GESTIÓN DE POLERAS & RETAIL</div>
-    <mat-nav-list class="nav-list">
-      <a mat-list-item routerLink="/admin/sucursales" routerLinkActive="active-link" id="nav-sucursales">
-        <mat-icon matListItemIcon>storefront</mat-icon>
-        <span matListItemTitle>Sucursales</span>
-      </a>
+      <mat-divider></mat-divider>
 
-      <a mat-list-item routerLink="/admin/customers" routerLinkActive="active-link" id="nav-clientes">
-        <mat-icon matListItemIcon>assignment_ind</mat-icon>
-        <span matListItemTitle>Clientes</span>
-      </a>
+      <!-- Módulo T-Shirt Retail Fashion -->
+      <div class="nav-section-title">GESTIÓN DE POLERAS & RETAIL</div>
+      <mat-nav-list class="nav-list">
+        <a mat-list-item routerLink="/admin/sucursales" routerLinkActive="active-link" id="nav-sucursales">
+          <mat-icon matListItemIcon>storefront</mat-icon>
+          <span matListItemTitle>Sucursales (Máx. {{ limiteSucursales }})</span>
+        </a>
 
-      <a mat-list-item routerLink="/admin/categorias" routerLinkActive="active-link" id="nav-categorias">
-        <mat-icon matListItemIcon>category</mat-icon>
-        <span matListItemTitle>Clasificación</span>
-      </a>
+        <a mat-list-item routerLink="/admin/customers" routerLinkActive="active-link" id="nav-clientes">
+          <mat-icon matListItemIcon>assignment_ind</mat-icon>
+          <span matListItemTitle>Clientes</span>
+        </a>
 
-      <a mat-list-item routerLink="/admin/products" routerLinkActive="active-link" id="nav-productos">
-        <mat-icon matListItemIcon>checkroom</mat-icon>
-        <span matListItemTitle>Poleras</span>
-      </a>
+        <a mat-list-item routerLink="/admin/categorias" routerLinkActive="active-link" id="nav-categorias">
+          <mat-icon matListItemIcon>category</mat-icon>
+          <span matListItemTitle>Clasificación</span>
+        </a>
 
-      <a mat-list-item routerLink="/admin/suppliers" routerLinkActive="active-link" id="nav-proveedores">
-        <mat-icon matListItemIcon>local_shipping</mat-icon>
-        <span matListItemTitle>Proveedores</span>
-      </a>
+        <a mat-list-item routerLink="/admin/products" routerLinkActive="active-link" id="nav-productos">
+          <mat-icon matListItemIcon>checkroom</mat-icon>
+          <span matListItemTitle>Poleras</span>
+        </a>
 
-      <a mat-list-item routerLink="/admin/inventario" routerLinkActive="active-link" id="nav-inventario">
-        <mat-icon matListItemIcon>inventory_2</mat-icon>
-        <span matListItemTitle>Inventario de Poleras</span>
-      </a>
+        <a mat-list-item routerLink="/admin/suppliers" routerLinkActive="active-link" id="nav-proveedores">
+          <mat-icon matListItemIcon>local_shipping</mat-icon>
+          <span matListItemTitle>Proveedores</span>
+        </a>
 
-      <a mat-list-item routerLink="/admin/pos" routerLinkActive="active-link" id="nav-pos">
-        <mat-icon matListItemIcon>point_of_sale</mat-icon>
-        <span matListItemTitle>Punto de Venta (POS - CU14)</span>
-      </a>
+        <a mat-list-item routerLink="/admin/inventario" routerLinkActive="active-link" id="nav-inventario">
+          <mat-icon matListItemIcon>inventory_2</mat-icon>
+          <span matListItemTitle>Inventario de Poleras</span>
+        </a>
 
-      <a mat-list-item routerLink="/admin/reservas" routerLinkActive="active-link" id="nav-reservas">
-        <mat-icon matListItemIcon>event_available</mat-icon>
-        <span matListItemTitle>Atención de Reservas (CU11)</span>
-      </a>
+        <a mat-list-item routerLink="/admin/pos" routerLinkActive="active-link" id="nav-pos">
+          <mat-icon matListItemIcon>point_of_sale</mat-icon>
+          <span matListItemTitle>Punto de Venta (POS - CU14)</span>
+        </a>
 
-      <a mat-list-item routerLink="/catalogo" target="_blank" id="nav-catalogo">
-        <mat-icon matListItemIcon>storefront</mat-icon>
-        <span matListItemTitle>Catálogo & Tienda Online</span>
-      </a>
+        <a mat-list-item routerLink="/admin/reservas" routerLinkActive="active-link" id="nav-reservas">
+          <mat-icon matListItemIcon>event_available</mat-icon>
+          <span matListItemTitle>Atención de Reservas (CU11)</span>
+        </a>
 
-      <a mat-list-item routerLink="/carrito" target="_blank" id="nav-carrito">
-        <mat-icon matListItemIcon>shopping_cart</mat-icon>
-        <span matListItemTitle>Carrito Omnicanal (CU09)</span>
-      </a>
+        <a mat-list-item routerLink="/admin/catalogo" routerLinkActive="active-link" id="nav-catalogo">
+          <mat-icon matListItemIcon>storefront</mat-icon>
+          <span matListItemTitle>Catálogo & Tienda Online</span>
+        </a>
 
-      <a mat-list-item routerLink="/mis-reservas" target="_blank" id="nav-mis-reservas">
-        <mat-icon matListItemIcon>bookmark_border</mat-icon>
-        <span matListItemTitle>Mis Reservas (CU10)</span>
-      </a>
+        <a mat-list-item routerLink="/admin/carrito" routerLinkActive="active-link" id="nav-carrito">
+          <mat-icon matListItemIcon>shopping_cart</mat-icon>
+          <span matListItemTitle>Carrito Omnicanal (CU09)</span>
+        </a>
 
-      <a mat-list-item routerLink="/mis-pedidos" target="_blank" id="nav-mis-pedidos">
-        <mat-icon matListItemIcon>local_shipping</mat-icon>
-        <span matListItemTitle>Mis Pedidos Online (CU15)</span>
-      </a>
+        <a mat-list-item routerLink="/admin/mis-reservas" routerLinkActive="active-link" id="nav-mis-reservas">
+          <mat-icon matListItemIcon>bookmark_border</mat-icon>
+          <span matListItemTitle>Reservas</span>
+        </a>
 
-      <a mat-list-item routerLink="/admin/ventas" routerLinkActive="active-link" id="nav-ventas">
-        <mat-icon matListItemIcon>receipt_long</mat-icon>
-        <span matListItemTitle>Histórico de Ventas</span>
-      </a>
+        <a mat-list-item routerLink="/admin/mis-pedidos" routerLinkActive="active-link" id="nav-mis-pedidos">
+          <mat-icon matListItemIcon>local_shipping</mat-icon>
+          <span matListItemTitle>Pedidos Online (CU15)</span>
+        </a>
 
-      <a mat-list-item routerLink="/admin/devoluciones" routerLinkActive="active-link" id="nav-devoluciones">
-        <mat-icon matListItemIcon>swap_horiz</mat-icon>
-        <span matListItemTitle>Cambios y Devoluciones (CU25)</span>
-      </a>
+        <a mat-list-item routerLink="/admin/ventas" routerLinkActive="active-link" id="nav-ventas">
+          <mat-icon matListItemIcon>receipt_long</mat-icon>
+          <span matListItemTitle>Histórico de Ventas</span>
+        </a>
 
-      <a mat-list-item routerLink="/admin/vencimiento-reservas" routerLinkActive="active-link" id="nav-vencimientos">
-        <mat-icon matListItemIcon>timer_off</mat-icon>
-        <span matListItemTitle>Vencimiento Reservas (CU24)</span>
-      </a>
-    </mat-nav-list>
+        <a mat-list-item routerLink="/admin/devoluciones" routerLinkActive="active-link" id="nav-devoluciones">
+          <mat-icon matListItemIcon>swap_horiz</mat-icon>
+          <span matListItemTitle>Cambios y Devoluciones (CU25)</span>
+        </a>
 
-    <mat-divider></mat-divider>
+        <a mat-list-item routerLink="/admin/vencimiento-reservas" routerLinkActive="active-link" id="nav-vencimientos">
+          <mat-icon matListItemIcon>timer_off</mat-icon>
+          <span matListItemTitle>Vencimiento Reservas (CU24)</span>
+        </a>
+      </mat-nav-list>
 
-    <!-- Módulo IA & Sync Engine -->
-    <div class="nav-section-title">INTELIGENCIA ARTIFICIAL & CONTINGENCIA</div>
-    <mat-nav-list class="nav-list">
-      <a mat-list-item routerLink="/admin/reportes-ia" routerLinkActive="active-link" id="nav-reportes-ia">
-        <mat-icon matListItemIcon>auto_awesome</mat-icon>
-        <span matListItemTitle>Reportes con IA (CU20)</span>
-      </a>
+      <mat-divider></mat-divider>
 
-      <a mat-list-item routerLink="/admin/suscripciones-tenants" routerLinkActive="active-link" id="nav-suscripciones">
-        <mat-icon matListItemIcon>domain</mat-icon>
-        <span matListItemTitle>Planes SaaS & Tenants (CU21)</span>
-      </a>
+      <!-- Módulo IA & Sync Engine según el Plan del Tenant -->
+      <div class="nav-section-title">INTELIGENCIA ARTIFICIAL & OFFLINE</div>
+      <mat-nav-list class="nav-list">
+        <!-- Si tiene Plan Profesional: habilitado -->
+        <a *ngIf="tieneReportesIA" mat-list-item routerLink="/admin/reportes-ia" routerLinkActive="active-link" id="nav-reportes-ia">
+          <mat-icon matListItemIcon>auto_awesome</mat-icon>
+          <span matListItemTitle>Reportes con IA (CU20)</span>
+        </a>
 
-      <a mat-list-item routerLink="/admin/cobros-offline" routerLinkActive="active-link" id="nav-cobros-offline">
-        <mat-icon matListItemIcon>payments</mat-icon>
-        <span matListItemTitle>Cobros Offline (CU22)</span>
-      </a>
+        <!-- Si tiene Plan Básico: bloqueado según Sección 9.4 -->
+        <a *ngIf="!tieneReportesIA" mat-list-item (click)="abrirReportesIA()" style="opacity: 0.55; cursor: not-allowed;" id="nav-reportes-ia-locked">
+          <mat-icon matListItemIcon>lock</mat-icon>
+          <span matListItemTitle>Reportes IA (Solo Plan Pro)</span>
+        </a>
 
-      <a mat-list-item routerLink="/admin/sincronizacion-offline" routerLinkActive="active-link" id="nav-sync-offline">
-        <mat-icon matListItemIcon>sync</mat-icon>
-        <span matListItemTitle>Sincronización Offline (CU23)</span>
-      </a>
-    </mat-nav-list>
+        <a mat-list-item routerLink="/admin/cobros-offline" routerLinkActive="active-link" id="nav-cobros-offline">
+          <mat-icon matListItemIcon>payments</mat-icon>
+          <span matListItemTitle>Cobros Offline (CU22)</span>
+        </a>
+
+        <a mat-list-item routerLink="/admin/sincronizacion-offline" routerLinkActive="active-link" id="nav-sync-offline">
+          <mat-icon matListItemIcon>sync</mat-icon>
+          <span matListItemTitle>Sincronización Offline (CU23)</span>
+        </a>
+      </mat-nav-list>
+    </ng-container>
 
 
 
@@ -166,7 +188,9 @@
       </button>
       
       <div class="header-brand-box">
-        <span class="header-title">Sistema de Gestión ERP - Shopyn Golden Store</span>
+        <span class="header-title">
+          {{ isSuperAdmin ? 'Consola Global de Plataforma SaaS — FashionStore' : ('Sistema de Gestión ERP — ' + tenantNombre + ' (Plan ' + planNombre + ')') }}
+        </span>
       </div>
 
       <span class="spacer"></span>
@@ -227,7 +251,7 @@
         <div class="profile-avatar">{{ userName.charAt(0).toUpperCase() }}</div>
         <div class="profile-info-text">
           <span class="profile-name">{{ userName }}</span>
-          <span class="profile-role">Administrador</span>
+          <span class="profile-role">{{ isSuperAdmin ? 'Admin General SaaS' : ('Admin · ' + tenantNombre) }}</span>
         </div>
         <mat-icon class="arrow-down">keyboard_arrow_down</mat-icon>
       </div>

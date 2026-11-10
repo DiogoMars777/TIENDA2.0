@@ -239,6 +239,20 @@ class ReporteGenerativoService:
         Persiste el resultado en `reporte_generativo_ia`.
         """
         tenant_id = tenant_id or 1
+
+        # Validar que el Plan del Tenant tenga habilitados los Reportes Generativos con IA (Sección 9.4 y 9.5)
+        from app.models.saas_tenant.tenant_model import Tenant, PlanSuscripcion
+        tenant_obj = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+        if tenant_obj and tenant_obj.plan_id:
+            plan_obj = db.query(PlanSuscripcion).filter(PlanSuscripcion.id == tenant_obj.plan_id).first()
+            if plan_obj:
+                tiene_ia = bool(getattr(plan_obj, "habilitar_reportes_ia", False) or getattr(plan_obj, "habilitar_vestidor_ia", False))
+                if not tiene_ia:
+                    raise ValueError(
+                        f"Restricción de Plan SaaS: Su empresa '{tenant_obj.nombre}' cuenta con el Plan '{plan_obj.nombre}', "
+                        "el cual no incluye Reportes Generativos con IA. Solicite al Administrador General el upgrade al Plan Profesional."
+                    )
+
         contexto = ReporteGenerativoService._extraer_contexto_negocio(db, tenant_id)
         api_key = os.getenv("GEMINI_API_KEY") or getattr(settings, "GEMINI_API_KEY", "")
 

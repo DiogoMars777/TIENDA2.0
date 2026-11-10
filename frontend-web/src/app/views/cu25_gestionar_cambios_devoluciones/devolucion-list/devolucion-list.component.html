@@ -236,12 +236,12 @@
       <div class="modal-body">
         <!-- Paso 1: Búsqueda y Validación de Venta -->
         <div class="step-card">
-          <h4 class="step-title">Paso 1: Localizar Venta Original</h4>
+          <h4 class="step-title">Paso 1: Localizar Venta Original (Por Código de Venta o ID)</h4>
           <div class="search-sale-row">
             <input 
-              type="number" 
+              type="text" 
               class="form-input" 
-              placeholder="Ingrese el ID numérico de la venta (ej: 1, 6, 8...)"
+              placeholder="Pegue el Código de Venta (ej: VTA-SYNC-REC-OFF-20261110-9852) o el ID (ej: 4)"
               [value]="ctrl.ventaIdBusqueda()"
               (input)="ctrl.ventaIdBusqueda.set($any($event.target).value)"
               (keyup.enter)="ctrl.validarVentaParaDevolucion()"

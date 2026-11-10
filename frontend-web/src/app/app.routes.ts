@@ -89,7 +89,7 @@ import { BitacoraListComponent } from './views/cu26_gestionar_bitacora/bitacora-
 // CU27: Dashboard Ejecutivo
 import { DashboardEjecutivoComponent } from './views/cu27_dashboard_ejecutivo/dashboard-ejecutivo/dashboard-ejecutivo.component';
 
-import { adminGuard } from './core/guards/admin.guard';
+import { adminGuard, superAdminGuard } from './core/guards/admin.guard';
 import { authGuard } from './core/guards/auth.guard';
 
 
@@ -100,8 +100,8 @@ export const routes: Routes = [
   { path: 'recover-password', component: RecoverPasswordComponent },
   { path: 'reset-password', component: ResetPasswordComponent },
 
-  // Dashboard de Reportes y KPIs (Exclusivo Administrador)
-  { path: 'dashboard', component: DashboardComponent, canActivate: [adminGuard] },
+  // Redirección para que el Dashboard siempre cargue dentro del layout con menú lateral
+  { path: 'dashboard', redirectTo: 'admin/dashboard', pathMatch: 'full' },
   { path: 'reportes-ia', redirectTo: 'admin/reportes-ia', pathMatch: 'full' },
   { path: 'atencion-reservas', redirectTo: 'admin/reservas', pathMatch: 'full' },
 
@@ -129,11 +129,13 @@ export const routes: Routes = [
     component: AdminLayoutComponent,
     canActivate: [adminGuard],
     children: [
+      // Dashboard dentro del layout con menú lateral fijo
+      { path: 'dashboard', component: DashboardComponent },
       // CU2: Usuarios y Roles
       { path: 'users', component: UserListComponent },
       { path: 'roles', component: RoleListComponent },
-      // CU20: Bitácora y Auditoría (Web)
-      { path: 'bitacora', component: BitacoraListComponent },
+      // CU26: Bitácora y Auditoría (Exclusivo SUPERADMIN)
+      { path: 'bitacora', component: BitacoraListComponent, canActivate: [superAdminGuard] },
       // CU3: Clientes
       { path: 'customers', component: CustomerListComponent },
       // CU4: Sucursales
@@ -148,8 +150,10 @@ export const routes: Routes = [
       { path: 'catalogo', component: ProductCatalogComponent },
       // CU09: Carrito
       { path: 'carrito', component: CartViewComponent },
-      // CU10: Mis Reservas
+      // CU10: Reservas
       { path: 'mis-reservas', component: MyReservationsComponent },
+      // CU15: Mis Pedidos Online dentro de Admin
+      { path: 'mis-pedidos', component: MisPedidosWebComponent },
       // CU11: Atender Reservas
       { path: 'reservas', component: AdminReservasComponent },
       // CU13: Inventario y Kardex
@@ -169,8 +173,8 @@ export const routes: Routes = [
       { path: 'notificaciones', component: NotificacionesViewComponent },
       // CU20: Generar Reportes Generativos con IA
       { path: 'reportes-ia', component: ReporteGenerativoComponent },
-      // CU21: Planes de Suscripción y Tenants
-      { path: 'suscripciones-tenants', component: SuscripcionTenantListComponent },
+      // CU21: Planes de Suscripción y Tenants (Exclusivo SUPERADMIN)
+      { path: 'suscripciones-tenants', component: SuscripcionTenantListComponent, canActivate: [superAdminGuard] },
       // CU22: Cobros Contado Offline
       { path: 'cobros-offline', component: CobroOfflineListComponent },
       // CU23: Sincronización Offline

@@ -54,16 +54,22 @@ export class CobroOfflineService {
     return this.http.post<{ exito: boolean; procesados: number; cobros: CobroOfflineDTO[] }>(`${this.apiUrl}/lote`, { cobros });
   }
 
-  // --- ALMACENAMIENTO DE CONTINGENCIA LOCAL (LOCALSTORAGE) ---
+  // --- ALMACENAMIENTO DE CONTINGENCIA LOCAL POR TENANT (LOCALSTORAGE) ---
 
-  guardarEnLocalStorage(registro: RegistroCobroOfflineRequest): CobroOfflineDTO {
+  private getStorageKey(): string {
+    const tenantId = localStorage.getItem('tenant_id') || '1';
+    return `${this.STORAGE_KEY}_tenant_${tenantId}`;
+  }
+
+  guardarEnLocalStorage(registro: RegistroCobroOfflineRequest, sucursalNombre?: string): CobroOfflineDTO {
     const cobrosLocales = this.obtenerDeLocalStorage();
     const mockId = Date.now();
+    const tenantId = Number(localStorage.getItem('tenant_id') || '1');
     const itemGuardado: CobroOfflineDTO = {
       id: mockId,
-      tenant_id: 1,
+      tenant_id: tenantId,
       sucursal_id: registro.sucursal_id,
-      sucursal_nombre: 'Sucursal Offline',
+      sucursal_nombre: sucursalNombre || 'Sucursal Central',
       monto: registro.monto,
       moneda: registro.moneda || 'BOB',
       nro_recibo_provisional: registro.nro_recibo_provisional,
@@ -80,13 +86,13 @@ export class CobroOfflineService {
     };
 
     cobrosLocales.unshift(itemGuardado);
-    localStorage.setItem(this.STORAGE_KEY, JSON.stringify(cobrosLocales));
+    localStorage.setItem(this.getStorageKey(), JSON.stringify(cobrosLocales));
     return itemGuardado;
   }
 
   obtenerDeLocalStorage(): CobroOfflineDTO[] {
     try {
-      const data = localStorage.getItem(this.STORAGE_KEY);
+      const data = localStorage.getItem(this.getStorageKey());
       return data ? JSON.parse(data) : [];
     } catch {
       return [];
@@ -94,6 +100,6 @@ export class CobroOfflineService {
   }
 
   limpiarLocalStorage(): void {
-    localStorage.removeItem(this.STORAGE_KEY);
+    localStorage.removeItem(this.getStorageKey());
   }
 }

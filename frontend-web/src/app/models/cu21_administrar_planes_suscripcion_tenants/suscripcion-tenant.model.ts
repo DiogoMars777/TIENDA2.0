@@ -11,6 +11,7 @@ export interface PlanSuscripcionDTO {
   limite_sucursales: number;
   limite_usuarios: number;
   limite_productos: number;
+  habilitar_reportes_ia?: boolean;
   habilitar_vestidor_ia: boolean;
   activo: boolean;
   fechacreacion?: string;
@@ -23,6 +24,7 @@ export interface PlanSuscripcionCreateDTO {
   limite_sucursales: number;
   limite_usuarios: number;
   limite_productos: number;
+  habilitar_reportes_ia?: boolean;
   habilitar_vestidor_ia: boolean;
   activo: boolean;
 }
@@ -66,6 +68,13 @@ export interface TenantDTO {
   fechacreacion?: string;
   suscripcion_actual?: TenantSuscripcionDTO;
   metricas_uso?: MetricasUsoTenantDTO;
+  administrador?: {
+    id: number;
+    nombre: string;
+    apellido?: string;
+    email: string;
+    activo?: boolean;
+  };
 }
 
 export interface NuevoTenantRequest {
@@ -77,6 +86,17 @@ export interface NuevoTenantRequest {
   direccion_fiscal?: string;
   plan_id: number;
   meses_suscripcion: number;
+  admin_nombre?: string;
+  admin_apellido?: string;
+  admin_email?: string;
+  admin_password?: string;
+}
+
+export interface AsignarAdminTenantRequest {
+  nombre: string;
+  apellido?: string;
+  email: string;
+  password: string;
 }
 
 export interface CambiarPlanRequest {

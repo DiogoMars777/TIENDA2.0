@@ -97,9 +97,8 @@ export class DevolucionController {
 
   validarVentaParaDevolucion(): void {
     const rawVal = this.ventaIdBusqueda().trim();
-    const vId = parseInt(rawVal, 10);
-    if (!vId || isNaN(vId)) {
-      this.mostrarToast('error', 'Ingrese un ID de venta numérico válido.');
+    if (!rawVal) {
+      this.mostrarToast('error', 'Ingrese el Código de Venta (ej: VTA-SYNC-...) o su ID numérico.');
       return;
     }
 
@@ -107,7 +106,7 @@ export class DevolucionController {
     this.ventaValidada.set(null);
     this.itemSeleccionadoParaCambio.set(null);
 
-    this.service.validarVenta(vId).subscribe({
+    this.service.validarVenta(rawVal).subscribe({
       next: (res) => {
         this.validandoVenta.set(false);
         this.ventaValidada.set(res);

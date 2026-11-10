@@ -9,22 +9,31 @@
   <header class="page-header">
     <div class="header-container">
       <div class="header-left">
-        <button mat-icon-button routerLink="/catalogo" class="btn-back" matTooltip="Volver al Catálogo">
+        <button *ngIf="!isAdminView" mat-icon-button routerLink="/catalogo" class="btn-back" matTooltip="Volver al Catálogo">
           <mat-icon>arrow_back</mat-icon>
         </button>
         <div>
-          <h1>Mis Reservas de Prendas <span class="cu-badge">CU10</span></h1>
-          <p class="subtitle">Consulta tus códigos de retiro, el stock apartado y el estado en sucursales físicas</p>
+          <h1>Reservas <span class="cu-badge">CU10</span></h1>
+          <p class="subtitle">Consulta los códigos de retiro, el stock apartado y el estado en sucursales físicas</p>
         </div>
       </div>
       <div class="header-actions">
-        <button routerLink="/mis-pedidos" class="btn-orders-link">
-          <mat-icon>local_shipping</mat-icon>
-          <span>Mis Pedidos Online</span>
+        <button
+          *ngIf="pendientesOfflineCount > 0"
+          type="button"
+          (click)="sincronizarReservasOffline()"
+          style="display: flex; align-items: center; gap: 6px; background: #f59e0b; color: white; border: none; padding: 8px 14px; border-radius: 8px; font-weight: 700; cursor: pointer;"
+        >
+          <mat-icon>sync</mat-icon>
+          <span>Sincronizar Reservas Offline ({{ pendientesOfflineCount }})</span>
         </button>
-        <button routerLink="/carrito" class="btn-cart-link">
+        <button [routerLink]="isAdminView ? '/admin/mis-pedidos' : '/mis-pedidos'" class="btn-orders-link">
+          <mat-icon>local_shipping</mat-icon>
+          <span>Pedidos Online</span>
+        </button>
+        <button [routerLink]="isAdminView ? '/admin/carrito' : '/carrito'" class="btn-cart-link">
           <mat-icon>shopping_bag</mat-icon>
-          <span>Ir a Mi Carrito</span>
+          <span>Ir al Carrito</span>
         </button>
       </div>
     </div>
@@ -115,7 +124,7 @@
       <h3>No se encontraron reservas</h3>
       <p *ngIf="filtroActual === 'TODAS'">Aún no has generado reservas. Agrega prendas a tu carrito y resérvalas para retirarlas en tu tienda favorita.</p>
       <p *ngIf="filtroActual !== 'TODAS'">No hay reservas en estado <strong>{{ filtroActual }}</strong>.</p>
-      <button routerLink="/catalogo" class="btn-primary-explore">
+      <button [routerLink]="isAdminView ? '/admin/catalogo' : '/catalogo'" class="btn-primary-explore">
         <mat-icon>storefront</mat-icon>
         <span>Explorar Catálogo</span>
       </button>
@@ -210,6 +219,17 @@
           </div>
 
           <div class="card-actions">
+            <button
+              *ngIf="isAdminView && res.estado === 'PENDIENTE'"
+              type="button"
+              (click)="irAAtenderEnCaja(res)"
+              style="display: flex; align-items: center; gap: 6px; background: #f59e0b; color: #ffffff; border: none; padding: 8px 14px; border-radius: 8px; font-weight: 700; cursor: pointer;"
+              matTooltip="Abrir en Atención de Caja para Cobro en Línea o Pago Offline (CU22)"
+            >
+              <mat-icon>point_of_sale</mat-icon>
+              <span>Atender en Caja / Pago Offline</span>
+            </button>
+
             <button
               type="button"
               class="btn-ticket"
