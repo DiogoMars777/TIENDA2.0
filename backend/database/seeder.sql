@@ -86,7 +86,6 @@ INSERT INTO "cliente" ("id", "nombre", "apellido", "email", "telefono", "fechana
 INSERT INTO "cliente" ("id", "nombre", "apellido", "email", "telefono", "fechanac", "genero", "activo", "fecharegistro", "usuarioid", "tenant_id") VALUES (30, 'Marcelo', 'Torrico Chávez', 'pedidos@sublisport.bo', '33990011', NULL, NULL, TRUE, '2026-09-22T03:02:58.902543', 21, 1);
 INSERT INTO "cliente" ("id", "nombre", "apellido", "email", "telefono", "fechanac", "genero", "activo", "fecharegistro", "usuarioid", "tenant_id") VALUES (31, 'Consumidor Final', '', 'consumidor_4668@boutique.com', '', NULL, NULL, TRUE, '2026-09-22T06:59:10.894841', 1, 1);
 INSERT INTO "cliente" ("id", "nombre", "apellido", "email", "telefono", "fechanac", "genero", "activo", "fecharegistro", "usuarioid", "tenant_id") VALUES (32, 'George', 'Alanoca', 'georgeoliveiraalanoca@gmail.com', '67838705', NULL, NULL, TRUE, '2026-11-10T03:53:00.594453', 25, 2);
-INSERT INTO "cliente" ("id", "nombre", "apellido", "email", "telefono", "fechanac", "genero", "activo", "fecharegistro", "usuarioid", "tenant_id") VALUES (33, 'George', 'Alanoca', 'georgeoliveiraalanoca@gmail.com', '67838705', NULL, NULL, TRUE, '2026-11-10T03:53:00.605360', 25, 2);
 
 -- Tabla: categoria (11 filas)
 INSERT INTO "categoria" ("id", "nombre", "descripcion", "activo", "tenant_id") VALUES (5, 'Poleras Polo', 'con cuello camisero y botones', TRUE, 1);
@@ -627,7 +626,7 @@ INSERT INTO "bitacora" ("id", "usuarioid", "accion", "modulo", "detalle", "ip", 
 -- Tabla: carrito (8 filas)
 INSERT INTO "carrito" ("id", "estado", "fechacreacion", "fechaactualizacion", "clienteid", "sucursalid", "tenant_id") VALUES (1, 'ACTIVO', '2026-09-12T02:56:27.226084', '2026-09-12T03:13:31.141425', 1, 1, 1);
 INSERT INTO "carrito" ("id", "estado", "fechacreacion", "fechaactualizacion", "clienteid", "sucursalid", "tenant_id") VALUES (11, 'ACTIVO', '2026-09-22T03:03:40.602421', '2026-10-13T11:54:39.926431', 14, 1, 1);
-INSERT INTO "carrito" ("id", "estado", "fechacreacion", "fechaactualizacion", "clienteid", "sucursalid", "tenant_id") VALUES (13, 'ACTIVO', '2026-10-13T11:52:58.287795', '2026-10-13T11:54:39.951952', 15, 1, 1);
+INSERT INTO "carrito" ("id", "estado", "fechacreacion", "fechaactualizacion", "clienteid", "sucursalid", "tenant_id") VALUES (13, 'ACTIVO', '2026-10-13T11:52:58.287795', '2026-10-13T11:54:39.951952', 5, 1, 1);
 INSERT INTO "carrito" ("id", "estado", "fechacreacion", "fechaactualizacion", "clienteid", "sucursalid", "tenant_id") VALUES (14, 'ACTIVO', '2026-11-10T03:10:44.135825', '2026-11-10T03:10:44.135831', 23, NULL, 1);
 INSERT INTO "carrito" ("id", "estado", "fechacreacion", "fechaactualizacion", "clienteid", "sucursalid", "tenant_id") VALUES (15, 'ACTIVO', '2026-11-10T03:12:00.855666', '2026-11-10T03:51:38.825002', 24, 4, 2);
 INSERT INTO "carrito" ("id", "estado", "fechacreacion", "fechaactualizacion", "clienteid", "sucursalid", "tenant_id") VALUES (16, 'CONVERTIDO', '2026-11-10T03:53:21.602768', '2026-11-10T03:54:00.344879', 25, 4, 2);

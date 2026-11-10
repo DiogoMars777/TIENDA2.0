@@ -5,6 +5,7 @@
 // ==============================================================================
 
 export interface CarritoItem {
+  item_id?: number;
   variante_id: number;
   producto_id: number;
   producto_nombre: string;
@@ -21,9 +22,10 @@ export interface CarritoItem {
 }
 
 export interface Carrito {
-  id: number;
-  estado: string;
-  cliente_id: number;
+  id?: number;
+  carrito_id?: number;
+  estado?: string;
+  cliente_id?: number;
   sucursal_id?: number | null;
   sucursal_nombre?: string | null;
   items: CarritoItem[];
