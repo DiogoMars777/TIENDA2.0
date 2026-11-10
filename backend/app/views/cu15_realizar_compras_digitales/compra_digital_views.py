@@ -9,6 +9,7 @@ from typing import List, Optional
 
 from app.core.database import get_db
 from app.core.security import verify_token
+from app.core.dependencies import get_current_tenant_user
 from app.models.models import UsuarioModel
 from app.schemas.orden_schema import (
     OrdenCreate,
