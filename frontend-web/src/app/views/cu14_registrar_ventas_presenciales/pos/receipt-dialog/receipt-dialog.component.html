@@ -1,12 +1,15 @@
 <div class="receipt-container" id="printable-receipt">
   
   <div class="receipt-header">
-    <div class="receipt-icon">
-      <mat-icon>check_circle</mat-icon>
+    <div class="receipt-icon" [class.offline-icon]="venta.estado === 'PROVISIONAL_OFFLINE'">
+      <mat-icon>{{ venta.estado === 'PROVISIONAL_OFFLINE' ? 'save' : 'check_circle' }}</mat-icon>
     </div>
     <h2 class="store-name">SHOPYN GOLDEN STORE</h2>
-    <p class="receipt-sub">Comprobante de Venta Presencial (POS)</p>
-    <div class="receipt-badge">{{ venta.codigoventa }}</div>
+    <p class="receipt-sub">{{ venta.estado === 'PROVISIONAL_OFFLINE' ? 'Comprobante Provisional Offline (IndexedDB)' : 'Comprobante de Venta Presencial (POS)' }}</p>
+    <div class="receipt-badge" [class.offline-badge]="venta.estado === 'PROVISIONAL_OFFLINE'">{{ venta.codigoventa }}</div>
+    <div *ngIf="venta.estado === 'PROVISIONAL_OFFLINE'" class="receipt-offline-warning">
+      RESGUARDO LOCAL DE CONTINGENCIA &bull; SE SINCRONIZARÁ A LA NUBE
+    </div>
   </div>
 
   <div class="meta-section">

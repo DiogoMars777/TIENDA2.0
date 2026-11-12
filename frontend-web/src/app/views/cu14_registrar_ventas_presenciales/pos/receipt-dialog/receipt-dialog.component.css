@@ -160,3 +160,25 @@
   }
 }
 
+
+.receipt-icon.offline-icon mat-icon {
+  color: #f59e0b;
+}
+
+.receipt-badge.offline-badge {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px dashed #f59e0b;
+}
+
+.receipt-offline-warning {
+  margin-top: 6px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  color: #b45309;
+  background: #fffbeb;
+  padding: 3px 8px;
+  border-radius: 4px;
+  display: inline-block;
+}

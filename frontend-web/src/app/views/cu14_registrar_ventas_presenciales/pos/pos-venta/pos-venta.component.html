@@ -2,6 +2,47 @@
 
   <!-- Columna Izquierda: Catálogo de Productos y Selector de Sucursal -->
   <div class="pos-catalog-panel">
+
+    <!-- Barra Superior de Conectividad & Estado IndexedDB (CU14 / CU22) -->
+    <div class="offline-status-bar" [class.offline]="!isOnline || modoOfflineForzado">
+      <div class="status-indicator">
+        <span class="status-dot" [class.offline]="!isOnline || modoOfflineForzado"></span>
+        <span class="status-text">
+          <strong *ngIf="isOnline && !modoOfflineForzado">SISTEMA EN LÍNEA:</strong>
+          <strong *ngIf="!isOnline || modoOfflineForzado">CONTINGENCIA OFFLINE:</strong>
+          <span class="status-desc" *ngIf="isOnline && !modoOfflineForzado">Base central en la nube activa.</span>
+          <span class="status-desc" *ngIf="!isOnline || modoOfflineForzado">Ventas resguardadas en IndexedDB del navegador.</span>
+        </span>
+      </div>
+
+      <div class="status-actions">
+        <!-- Botón para alternar / simular corte de internet -->
+        <button 
+          mat-button 
+          type="button" 
+          class="btn-toggle-offline" 
+          [class.active]="modoOfflineForzado"
+          (click)="toggleModoOffline()"
+          matTooltip="Prueba el comportamiento cuando se cae la conexión a internet"
+        >
+          <mat-icon>{{ modoOfflineForzado ? 'cloud_queue' : 'cloud_off' }}</mat-icon>
+          <span>{{ modoOfflineForzado ? 'Reconectar Nube' : 'Simular Pérdida de Internet' }}</span>
+        </button>
+
+        <!-- Botón de Sincronización a la Nube -->
+        <button 
+          mat-flat-button 
+          type="button"
+          class="btn-sync-indexeddb" 
+          *ngIf="ventasPendientesSyncCount > 0"
+          [disabled]="sincronizandoVentas"
+          (click)="sincronizarVentasPendientes()"
+        >
+          <mat-icon [class.spinning]="sincronizandoVentas">sync</mat-icon>
+          <span>{{ sincronizandoVentas ? 'Sincronizando...' : 'Sincronizar ' + ventasPendientesSyncCount + ' Venta(s)' }}</span>
+        </button>
+      </div>
+    </div>
     
     <!-- Header del POS con Sucursal y Buscador -->
     <div class="pos-topbar">
@@ -19,7 +60,7 @@
 
       <div class="search-box">
         <mat-form-field appearance="outline" class="search-field">
-          <mat-label>Buscar prendas (ej: Polo, Negra, M...)</mat-label>
+          <mat-label>Buscar prendas (ej: Polo, Negra, M, o código de barras)</mat-label>
           <input matInput [formControl]="searchControl" placeholder="Escriba para filtrar productos..." id="input-search-pos">
           <mat-icon matPrefix>search</mat-icon>
         </mat-form-field>
@@ -34,6 +75,9 @@
       <div *ngIf="!loading && productosFiltrados.length === 0" class="empty-catalog">
         <mat-icon>search_off</mat-icon>
         <p>No se encontraron productos disponibles en esta sucursal.</p>
+        <span class="sub-empty" *ngIf="!isOnline || modoOfflineForzado">
+          (Asegúrese de haber cargado el catálogo al menos una vez con internet para poblar la IndexedDB local)
+        </span>
       </div>
 
       <div class="products-grid" *ngIf="!loading && productosFiltrados.length > 0">
@@ -91,12 +135,18 @@
     <!-- Contenido Scrollable de la Caja -->
     <div class="cart-scrollable-content">
       
-      <!-- Selector de Cliente -->
+      <!-- Selector de Cliente y NIT -->
       <div class="client-box">
         <mat-form-field appearance="outline" class="full-width compact-field">
           <mat-label>Cliente (Para Recibo / Factura)</mat-label>
           <input matInput [formControl]="clienteNombreControl" placeholder="Ej: Consumidor Final o Nombre" id="input-pos-cliente">
           <mat-icon matPrefix>person</mat-icon>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="full-width compact-field nit-field">
+          <mat-label>NIT / CI</mat-label>
+          <input matInput [formControl]="clienteNitControl" placeholder="0" id="input-pos-nit">
+          <mat-icon matPrefix>badge</mat-icon>
         </mat-form-field>
       </div>
 
@@ -289,17 +339,25 @@
 
     <!-- Barra Inferior Fija: Botón de Cobro Siempre Visible -->
     <div class="cart-sticky-bottom">
+      <div class="offline-pill-note" *ngIf="!isOnline || modoOfflineForzado">
+        <mat-icon>save_as</mat-icon>
+        <span>Contingencia: Se emitirá recibo provisional y se guardará en IndexedDB.</span>
+      </div>
+
       <button 
         mat-raised-button 
         color="primary" 
         class="btn-checkout"
-        [disabled]="cart.length === 0 || procesandoVenta || (esQR && !qrConfirmadoManual)"
+        [class.btn-checkout-offline]="!isOnline || modoOfflineForzado"
+        [disabled]="cart.length === 0 || procesandoVenta || (esQR && !qrConfirmadoManual && (isOnline && !modoOfflineForzado))"
         (click)="procesarCobro()"
         id="btn-pos-cobrar"
       >
-        <mat-icon *ngIf="!procesandoVenta">shopping_bag</mat-icon>
-        <span *ngIf="!procesandoVenta">COBRAR Y REGISTRAR VENTA (Bs. {{ total | number:'1.2-2' }})</span>
-        <span *ngIf="procesandoVenta">Procesando Venta...</span>
+        <mat-icon *ngIf="!procesandoVenta">{{ (!isOnline || modoOfflineForzado) ? 'receipt_long' : 'shopping_bag' }}</mat-icon>
+        <span *ngIf="!procesandoVenta">
+          {{ (!isOnline || modoOfflineForzado) ? 'COBRO OFFLINE / RECIBO (Bs. ' + (total | number:'1.2-2') + ')' : 'COBRAR Y REGISTRAR VENTA (Bs. ' + (total | number:'1.2-2') + ')' }}
+        </span>
+        <span *ngIf="procesandoVenta">Procesando...</span>
       </button>
     </div>
   </div>

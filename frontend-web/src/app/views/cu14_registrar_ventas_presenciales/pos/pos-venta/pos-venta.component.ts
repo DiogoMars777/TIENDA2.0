@@ -17,12 +17,17 @@ import { Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, takeUntil } from 'rxjs/operators';
 
 import { InventarioItem } from '../../../../models/cu13_gestionar_inventario_movimientos/inventario.model';
-import { MetodoPago, VentaPresencialCreateDTO } from '../../../../models/cu14_registrar_ventas_presenciales/venta.model';
+import { MetodoPago, VentaPresencialCreateDTO, VentaCompleta } from '../../../../models/cu14_registrar_ventas_presenciales/venta.model';
 import { Sucursal } from '../../../../models/cu4_gestionar_sucursales/sucursal.model';
 import { InventarioService } from '../../../../services/cu13_gestionar_inventario_movimientos/inventario.service';
 import { VentaController } from '../../../../controllers/cu14_registrar_ventas_presenciales/venta.controller';
 import { SucursalController } from '../../../../controllers/cu4_gestionar_sucursales/sucursal.controller';
 import { ReceiptDialogComponent } from '../receipt-dialog/receipt-dialog.component';
+
+// Servicios de Almacenamiento Offline en IndexedDB y Sincronización
+import { PosIndexedDbService, VentaOfflineRecord } from '../../../../core/services/pos-indexed-db.service';
+import { CobroOfflineService } from '../../../../services/cu22_registrar_cobros_contado_offline/cobro-offline.service';
+import { RegistroCobroOfflineRequest } from '../../../../models/cu22_registrar_cobros_contado_offline/cobro-offline.model';
 
 export interface PosCartItem {
   inventarioItem: InventarioItem;
@@ -64,6 +69,7 @@ export class PosVentaComponent implements OnInit, OnDestroy {
   sucursalControl = new FormControl<number | null>(null, [Validators.required]);
   searchControl = new FormControl('');
   clienteNombreControl = new FormControl('Consumidor Final', [Validators.required]);
+  clienteNitControl = new FormControl('0');
   metodoPagoControl = new FormControl<number | null>(null, [Validators.required]);
   montoRecibidoControl = new FormControl<number | null>(null);
 
@@ -72,6 +78,13 @@ export class PosVentaComponent implements OnInit, OnDestroy {
   loading = false;
   procesandoVenta = false;
   private destroy$ = new Subject<void>();
+
+  // Estado de Red & Modo Offline en IndexedDB
+  isOnline: boolean = typeof navigator !== 'undefined' ? navigator.onLine : true;
+  modoOfflineForzado: boolean = false;
+  ventasPendientesSyncCount: number = 0;
+  sincronizandoVentas: boolean = false;
+  private autoSyncInterval: any = null;
 
   // QR Simulado
   qrConfirmadoManual = false;
@@ -88,45 +101,58 @@ export class PosVentaComponent implements OnInit, OnDestroy {
     public ventaController: VentaController,
     public sucursalController: SucursalController,
     private snackBar: MatSnackBar,
-    private dialog: MatDialog
+    private dialog: MatDialog,
+    public posIndexedDb: PosIndexedDbService,
+    private cobroOfflineService: CobroOfflineService
   ) {}
 
   ngOnInit(): void {
-    // 1. Cargar Sucursales
+    // 1. Inicializar detección de conectividad del navegador
+    this.iniciarListenersRed();
+
+    // 2. Contar ventas pendientes de sincronizar en IndexedDB
+    this.actualizarContadorPendientes();
+
+    // 3. Cargar Sucursales (con respaldo en IndexedDB)
     this.sucursalController.sucursales$.pipe(takeUntil(this.destroy$)).subscribe(sucursales => {
-      this.sucursales = sucursales;
-      if (sucursales.length > 0) {
+      if (sucursales && sucursales.length > 0) {
+        this.sucursales = sucursales;
+        this.posIndexedDb.guardarSucursales(sucursales);
         const idToSet = this.sucursalControl.value || sucursales[0].id;
         this.sucursalControl.setValue(idToSet, { emitEvent: false });
         this.cargarInventarioSucursal(idToSet);
       }
     });
 
-    // 2. Cargar Métodos de Pago (Filtrando estrictamente online / digital)
+    // 4. Cargar Métodos de Pago (con respaldo en IndexedDB)
     this.ventaController.metodosPago$.pipe(takeUntil(this.destroy$)).subscribe(metodos => {
-      this.metodosPago = metodos.filter(m => 
-        !m.nombre.toLowerCase().includes('digital') && 
-        !m.nombre.toLowerCase().includes('online')
-      );
-      if (this.metodosPago.length > 0 && !this.metodoPagoControl.value) {
-        const efectivo = this.metodosPago.find(m => m.nombre.toLowerCase().includes('efectivo')) || this.metodosPago[0];
-        this.metodoPagoControl.setValue(efectivo.id);
+      if (metodos && metodos.length > 0) {
+        const filtrados = metodos.filter(m => 
+          !m.nombre.toLowerCase().includes('digital') && 
+          !m.nombre.toLowerCase().includes('online')
+        );
+        this.metodosPago = filtrados;
+        this.posIndexedDb.guardarMetodosPago(filtrados);
+        if (this.metodosPago.length > 0 && !this.metodoPagoControl.value) {
+          const efectivo = this.metodosPago.find(m => m.nombre.toLowerCase().includes('efectivo')) || this.metodosPago[0];
+          this.metodoPagoControl.setValue(efectivo.id);
+        }
       }
     });
 
-    // 3. Reactividad al cambiar de sucursal
+    // 5. Reactividad al cambiar de sucursal
     this.sucursalControl.valueChanges
       .pipe(distinctUntilChanged(), takeUntil(this.destroy$))
       .subscribe(sucursalId => {
         if (sucursalId) {
           this.cargarInventarioSucursal(sucursalId);
-          this.cart = []; // Vaciar carrito si cambia de tienda
+          this.cart = []; // Vaciar ticket si cambia de tienda
         }
       });
 
-    // 4. Búsqueda de productos
+    // 6. Búsqueda rápida de productos
     this.searchControl.valueChanges
-      .pipe(debounceTime(250), distinctUntilChanged(), takeUntil(this.destroy$))
+      .pipe(debounceTime(200), distinctUntilChanged(), takeUntil(this.destroy$))
       .subscribe(term => {
         this.filtrarProductos(term || '');
       });
@@ -138,52 +164,155 @@ export class PosVentaComponent implements OnInit, OnDestroy {
         this.qrConfirmadoManual = false;
       });
 
-    this.sucursalController.loadSucursales();
-    this.ventaController.loadMetodosPago();
+    this.cargarDatosIniciales();
+
+    // 7. Timer periódico de sincronización automática en segundo plano (cada 20s)
+    this.autoSyncInterval = setInterval(() => {
+      if (this.isOnline && !this.modoOfflineForzado && this.ventasPendientesSyncCount > 0 && !this.sincronizandoVentas) {
+        this.sincronizarVentasPendientes(true);
+      }
+    }, 20000);
   }
 
   ngOnDestroy(): void {
+    if (this.autoSyncInterval) {
+      clearInterval(this.autoSyncInterval);
+    }
+    window.removeEventListener('online', this.handleOnline);
+    window.removeEventListener('offline', this.handleOffline);
     this.destroy$.next();
     this.destroy$.complete();
   }
 
-  // Getters de método de pago
-  get metodoSeleccionado(): MetodoPago | undefined {
-    return this.metodosPago.find(m => m.id === this.metodoPagoControl.value);
+  // ============================================================================
+  // MONITOREO DE RED & INDEXEDDB
+  // ============================================================================
+
+  private handleOnline = () => {
+    this.isOnline = true;
+    this.snackBar.open('🟢 Conexión a internet reestablecida. Verificando sincronización a la nube...', 'OK', { duration: 3500 });
+    this.actualizarContadorPendientes();
+    if (this.ventasPendientesSyncCount > 0) {
+      this.sincronizarVentasPendientes(false);
+    }
+  };
+
+  private handleOffline = () => {
+    this.isOnline = false;
+    this.snackBar.open('🟠 Sin conexión a internet. El POS ha cambiado a modo Contingencia Offline (IndexedDB activo).', 'Entendido', { duration: 5000 });
+  };
+
+  private iniciarListenersRed(): void {
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', this.handleOnline);
+      window.addEventListener('offline', this.handleOffline);
+    }
   }
 
-  get esEfectivo(): boolean {
-    return !!this.metodoSeleccionado?.nombre.toLowerCase().includes('efectivo');
+  async actualizarContadorPendientes(): Promise<void> {
+    try {
+      this.ventasPendientesSyncCount = await this.posIndexedDb.contarVentasPendientes();
+    } catch (e) {
+      console.error('Error contando ventas pendientes en IndexedDB:', e);
+    }
   }
 
-  get esQR(): boolean {
-    const n = this.metodoSeleccionado?.nombre.toLowerCase() || '';
-    return n.includes('qr') || n.includes('transferencia');
+  toggleModoOffline(forzar?: boolean): void {
+    this.modoOfflineForzado = forzar !== undefined ? forzar : !this.modoOfflineForzado;
+    if (this.modoOfflineForzado) {
+      this.snackBar.open('Modo Contingencia Offline FORZADO: Todas las ventas se resguardarán en IndexedDB del navegador.', 'OK', { duration: 4000 });
+    } else {
+      this.snackBar.open('Modo Normal Restaurado: Conexión con servidor central en la nube activada.', 'OK', { duration: 3000 });
+      if (this.isOnline && this.ventasPendientesSyncCount > 0) {
+        this.sincronizarVentasPendientes(false);
+      }
+    }
+    const currentSucursal = this.sucursalControl.value;
+    if (currentSucursal) {
+      this.cargarInventarioSucursal(currentSucursal);
+    }
   }
 
-  get esTarjeta(): boolean {
-    const n = this.metodoSeleccionado?.nombre.toLowerCase() || '';
-    return n.includes('tarjeta') || n.includes('crédito') || n.includes('débito') || n.includes('visa');
+  private async cargarDatosIniciales(): Promise<void> {
+    // Si estamos sin red o se produce un error, restaurar desde IndexedDB
+    try {
+      this.sucursalController.loadSucursales();
+    } catch {
+      const sucsLocales = await this.posIndexedDb.obtenerSucursales();
+      if (sucsLocales.length > 0) {
+        this.sucursales = sucsLocales;
+        this.sucursalControl.setValue(sucsLocales[0].id, { emitEvent: false });
+        this.cargarInventarioDesdeIndexedDb(sucsLocales[0].id);
+      }
+    }
+
+    try {
+      this.ventaController.loadMetodosPago();
+    } catch {
+      const metodosLocales = await this.posIndexedDb.obtenerMetodosPago();
+      if (metodosLocales.length > 0) {
+        this.metodosPago = metodosLocales;
+        this.metodoPagoControl.setValue(metodosLocales[0].id);
+      }
+    }
   }
+
+  // ============================================================================
+  // CARGA DE INVENTARIO (ONLINE + INDEXEDDB OFFLINE FIRST)
+  // ============================================================================
 
   cargarInventarioSucursal(sucursalId: number): void {
     this.loading = true;
+
+    // Si no hay internet o está forzado el modo contingencia, cargar desde IndexedDB
+    if (!this.isOnline || this.modoOfflineForzado) {
+      this.cargarInventarioDesdeIndexedDb(sucursalId);
+      return;
+    }
+
+    // Modo Online: Consultar API central en la nube y sincronizar a IndexedDB
     this.inventarioService.getInventario(sucursalId).subscribe({
       next: (items) => {
-        this.productosCatalogo = items.map(it => ({
+        const mapeados = items.map(it => ({
           ...it,
           talla: it.talla || it.talla_nombre || 'Única',
           color: it.color || it.color_nombre || 'Estándar',
           imagen_url: it.imagen_url || ''
         }));
+        this.productosCatalogo = mapeados;
         this.filtrarProductos(this.searchControl.value || '');
         this.loading = false;
+
+        // Resguardo asíncrono en IndexedDB del navegador
+        this.posIndexedDb.guardarCatalogoSucursal(sucursalId, mapeados).catch(err => {
+          console.warn('Aviso al guardar catálogo en IndexedDB:', err);
+        });
       },
-      error: (err: any) => {
-        console.error('Error al cargar catálogo de sucursal:', err);
-        this.loading = false;
+      error: async (err: any) => {
+        console.warn('Fallo al consultar inventario central, recurriendo a IndexedDB local:', err);
+        await this.cargarInventarioDesdeIndexedDb(sucursalId);
       }
     });
+  }
+
+  async cargarInventarioDesdeIndexedDb(sucursalId: number): Promise<void> {
+    this.loading = true;
+    try {
+      const itemsLocales = await this.posIndexedDb.obtenerCatalogoSucursal(sucursalId);
+      if (itemsLocales.length > 0) {
+        this.productosCatalogo = itemsLocales;
+        this.filtrarProductos(this.searchControl.value || '');
+        this.snackBar.open('Mostrando catálogo local desde IndexedDB (Modo Offline)', 'OK', { duration: 2500 });
+      } else {
+        this.productosCatalogo = [];
+        this.productosFiltrados = [];
+        this.snackBar.open('No hay productos guardados en la memoria local IndexedDB de esta sucursal. Conéctese a internet para precargar el catálogo.', 'Cerrar', { duration: 4000 });
+      }
+    } catch (e) {
+      console.error('Error leyendo catálogo de IndexedDB:', e);
+    } finally {
+      this.loading = false;
+    }
   }
 
   filtrarProductos(term: string): void {
@@ -194,12 +323,16 @@ export class PosVentaComponent implements OnInit, OnDestroy {
       this.productosFiltrados = this.productosCatalogo.filter(p =>
         p.producto_nombre.toLowerCase().includes(q) ||
         (p.color ? p.color.toLowerCase().includes(q) : false) ||
-        (p.talla ? p.talla.toLowerCase().includes(q) : false)
+        (p.talla ? p.talla.toLowerCase().includes(q) : false) ||
+        (p.sku ? p.sku.toLowerCase().includes(q) : false)
       );
     }
   }
 
-  // --- Operaciones de Carrito ---
+  // ============================================================================
+  // OPERACIONES DEL CARRITO
+  // ============================================================================
+
   getStockDisponible(item: InventarioItem): number {
     if (item.stockdisponible !== undefined) {
       return item.stockdisponible;
@@ -235,7 +368,7 @@ export class PosVentaComponent implements OnInit, OnDestroy {
       });
     }
 
-    this.snackBar.open(`Agregado al carrito: ${item.producto_nombre} (${item.talla})`, 'OK', { duration: 1500 });
+    this.snackBar.open(`Agregado al ticket: ${item.producto_nombre} (${item.talla})`, 'OK', { duration: 1200 });
   }
 
   incrementQty(cartItem: PosCartItem): void {
@@ -288,7 +421,28 @@ export class PosVentaComponent implements OnInit, OnDestroy {
     this.montoRecibidoControl.setValue(monto);
   }
 
-  // --- Cobro / Checkout POS ---
+  get metodoSeleccionado(): MetodoPago | undefined {
+    return this.metodosPago.find(m => m.id === this.metodoPagoControl.value);
+  }
+
+  get esEfectivo(): boolean {
+    return !!this.metodoSeleccionado?.nombre.toLowerCase().includes('efectivo');
+  }
+
+  get esQR(): boolean {
+    const n = this.metodoSeleccionado?.nombre.toLowerCase() || '';
+    return n.includes('qr') || n.includes('transferencia');
+  }
+
+  get esTarjeta(): boolean {
+    const n = this.metodoSeleccionado?.nombre.toLowerCase() || '';
+    return n.includes('tarjeta') || n.includes('crédito') || n.includes('débito') || n.includes('visa');
+  }
+
+  // ============================================================================
+  // PROCESAMIENTO DE COBRO (ONLINE O EN CONTINGENCIA INDEXEDDB)
+  // ============================================================================
+
   procesarCobro(): void {
     if (this.cart.length === 0) {
       this.snackBar.open('El ticket de venta está vacío', 'Cerrar', { duration: 3000 });
@@ -299,7 +453,7 @@ export class PosVentaComponent implements OnInit, OnDestroy {
     const metodoPagoId = this.metodoPagoControl.value;
 
     if (!sucursalId || !metodoPagoId) {
-      this.snackBar.open('Seleccione una sucursal y un método de pago válidos', 'Cerrar', { duration: 3000 });
+      this.snackBar.open('Seleccione una sucursal y una forma de pago válidas', 'Cerrar', { duration: 3000 });
       return;
     }
 
@@ -317,17 +471,17 @@ export class PosVentaComponent implements OnInit, OnDestroy {
     // Validación QR con confirmación manual del cajero
     if (this.esQR) {
       if (!this.qrConfirmadoManual) {
-        this.snackBar.open('Debe marcar la casilla "Confirmar recepción de pago QR" una vez verificado el abono en cuenta.', 'Atención', { duration: 4000 });
+        this.snackBar.open('Debe marcar la casilla de confirmación de pago QR verificado en cuenta.', 'Atención', { duration: 4000 });
         return;
       }
       this.ejecutarRegistroVenta(sucursalId, metodoPagoId, this.total);
       return;
     }
 
-    // Simulación Cobro Tarjeta Visa
+    // Tarjeta
     if (this.esTarjeta) {
       if (!this.tarjetaNumero || this.tarjetaNumero.trim().length < 10) {
-        this.snackBar.open('Por favor ingrese los datos de la tarjeta Visa para procesar.', 'Cerrar', { duration: 3000 });
+        this.snackBar.open('Por favor ingrese los datos de la tarjeta para procesar.', 'Cerrar', { duration: 3000 });
         return;
       }
 
@@ -336,15 +490,21 @@ export class PosVentaComponent implements OnInit, OnDestroy {
       setTimeout(() => {
         this.procesandoTarjeta = false;
         this.ejecutarRegistroVenta(sucursalId, metodoPagoId, this.total);
-      }, 1500);
+      }, 1200);
       return;
     }
 
-    // Cualquier otro método
     this.ejecutarRegistroVenta(sucursalId, metodoPagoId, this.total);
   }
 
   private ejecutarRegistroVenta(sucursalId: number, metodoPagoId: number, montoRecibido: number): void {
+    // Si estamos desconectados o en modo contingencia offline, guardar directamente en IndexedDB
+    if (!this.isOnline || this.modoOfflineForzado) {
+      this.guardarVentaEnIndexedDb(sucursalId, metodoPagoId, montoRecibido);
+      return;
+    }
+
+    // Modo Online: intentar enviar directamente a la nube
     const dto: VentaPresencialCreateDTO = {
       sucursal_id: sucursalId,
       cliente_nombre: this.clienteNombreControl.value || 'Consumidor Final',
@@ -379,17 +539,235 @@ export class PosVentaComponent implements OnInit, OnDestroy {
           }
         });
 
-        // Limpiar carrito y recargar inventario local de la sucursal
         this.clearCart();
         this.cargarInventarioSucursal(sucursalId);
-        this.snackBar.open('¡Venta presencial registrada y stock descontado exitosamente!', 'Excelente', { duration: 4000 });
+        this.snackBar.open('¡Venta presencial registrada y stock descontado exitosamente en la nube!', 'Excelente', { duration: 4000 });
       },
       error: (err: any) => {
         this.procesandoVenta = false;
-        const msg = err.error?.detail || 'Error al procesar la venta en caja';
-        this.snackBar.open(`Error: ${msg}`, 'Cerrar', { duration: 5000 });
+        // Si el fallo es por desconexión de red o caída del servidor, salvar en IndexedDB automáticamente
+        if (!navigator.onLine || err.status === 0 || err.status >= 500) {
+          this.snackBar.open('Pérdida de conexión con la nube. Guardando venta localmente en IndexedDB...', 'Contingencia', { duration: 3500 });
+          this.guardarVentaEnIndexedDb(sucursalId, metodoPagoId, montoRecibido);
+        } else {
+          const msg = err.error?.detail || 'Error al procesar la venta en caja';
+          this.snackBar.open(`Error: ${msg}`, 'Cerrar', { duration: 5000 });
+        }
       }
     });
   }
-}
 
+  // ============================================================================
+  // GUARDADO DE VENTA EN INDEXEDDB (CONTINGENCIA SIN INTERNET)
+  // ============================================================================
+
+  private async guardarVentaEnIndexedDb(sucursalId: number, metodoPagoId: number, montoRecibido: number): Promise<void> {
+    try {
+      this.procesandoVenta = true;
+      const sucursalObj = this.sucursales.find(s => s.id === sucursalId);
+      const metodoObj = this.metodosPago.find(m => m.id === metodoPagoId);
+
+      // Generar Folio Provisional de Contingencia (ej. REC-POS-8Y3K21)
+      const caracteres = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      let sufijo = '';
+      for (let i = 0; i < 6; i++) {
+        sufijo += caracteres.charAt(Math.floor(Math.random() * caracteres.length));
+      }
+      const folioProvisional = `REC-POS-${sufijo}`;
+      const uuid = (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID)
+        ? window.crypto.randomUUID()
+        : `off-pos-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+
+      const itemsSnapshot = this.cart.map(c => ({
+        variante_id: c.inventarioItem.variante_id,
+        producto_id: c.inventarioItem.producto_id,
+        producto_nombre: c.inventarioItem.producto_nombre,
+        talla: c.inventarioItem.talla,
+        color: c.inventarioItem.color,
+        cantidad: c.cantidad,
+        precio_unitario: c.precioUnitario,
+        subtotal: c.subtotal,
+        inventarioId: c.inventarioItem.id
+      }));
+
+      // Descontar inventario en IndexedDB localmente para evitar sobreventa en modo offline
+      await this.posIndexedDb.descontarStockLocal(
+        sucursalId,
+        itemsSnapshot.map(it => ({ inventarioId: it.inventarioId, varianteId: it.variante_id, cantidad: it.cantidad }))
+      );
+
+      // Actualizar también el estado en memoria para que la UI refleje el nuevo stock
+      for (const it of itemsSnapshot) {
+        const prod = this.productosCatalogo.find(p => p.id === it.inventarioId);
+        if (prod) {
+          prod.stockfisico = Math.max(0, prod.stockfisico - it.cantidad);
+          if (prod.stockdisponible !== undefined) {
+            prod.stockdisponible = Math.max(0, prod.stockdisponible - it.cantidad);
+          }
+        }
+      }
+      this.filtrarProductos(this.searchControl.value || '');
+
+      const ahora = new Date().toISOString();
+
+      // Registro formal para IndexedDB
+      const ventaOffline: VentaOfflineRecord = {
+        nro_recibo_provisional: folioProvisional,
+        uuid_operacion: uuid,
+        sucursal_id: sucursalId,
+        sucursal_nombre: sucursalObj?.nombre || 'Sucursal Mostrador',
+        cliente_nombre: this.clienteNombreControl.value || 'Consumidor Final',
+        cliente_nit: this.clienteNitControl.value || '0',
+        monto: this.total,
+        moneda: 'BOB',
+        metodo_pago_id: metodoPagoId,
+        metodo_pago_nombre: metodoObj?.nombre || 'Efectivo',
+        efectivo_recibido: this.esEfectivo ? montoRecibido : this.total,
+        cambio: this.esEfectivo ? this.cambio : 0,
+        observaciones: `[VENTA POS CONTINGENCIA OFFLINE EN NAVEGADOR] Folio: ${folioProvisional}`,
+        fecha_cobro: ahora,
+        sincronizado: false,
+        items: itemsSnapshot
+      };
+
+      await this.posIndexedDb.guardarVentaOffline(ventaOffline);
+      await this.actualizarContadorPendientes();
+
+      // Construir VentaCompleta simulada para abrir el diálogo del comprobante / ticket
+      const ventaModal: VentaCompleta = {
+        id: Date.now(),
+        codigoventa: folioProvisional,
+        tipoventa: 'Presencial (Offline Contingencia)',
+        estado: 'PROVISIONAL_OFFLINE',
+        subtotal: this.subtotal,
+        descuento: 0,
+        total: this.total,
+        fecha: ahora,
+        sucursalid: sucursalId,
+        sucursal_nombre: sucursalObj?.nombre || 'Sucursal Mostrador',
+        cliente_nombre: this.clienteNombreControl.value || 'Consumidor Final',
+        metodo_pago_nombre: metodoObj?.nombre || 'Efectivo',
+        cambio: this.esEfectivo ? this.cambio : 0
+      };
+
+      this.dialog.open(ReceiptDialogComponent, {
+        width: '520px',
+        data: {
+          venta: ventaModal,
+          items: itemsSnapshot.map(c => ({
+            nombre: c.producto_nombre,
+            variante: `Talla: ${c.talla} | Color: ${c.color}`,
+            cantidad: c.cantidad,
+            precio: c.precio_unitario,
+            subtotal: c.subtotal
+          })),
+          montoRecibido: this.esEfectivo ? montoRecibido : this.total,
+          cambio: this.esEfectivo ? this.cambio : 0
+        }
+      });
+
+      this.clearCart();
+      this.snackBar.open(
+        `¡Venta ${folioProvisional} guardada en IndexedDB del navegador! Se sincronizará automáticamente al volver internet.`,
+        'Entendido',
+        { duration: 6000 }
+      );
+    } catch (e) {
+      console.error('Error guardando venta offline en IndexedDB:', e);
+      this.snackBar.open(`Error al resguardar venta offline: ${e}`, 'Cerrar', { duration: 5000 });
+    } finally {
+      this.procesandoVenta = false;
+    }
+  }
+
+  // ============================================================================
+  // SINCRONIZACIÓN DE VENTAS DE INDEXEDDB A LA NUBE
+  // ============================================================================
+
+  async sincronizarVentasPendientes(silencioso: boolean = false): Promise<void> {
+    if (this.sincronizandoVentas) return;
+
+    const pendientes = await this.posIndexedDb.obtenerVentasPendientes();
+    if (pendientes.length === 0) {
+      this.ventasPendientesSyncCount = 0;
+      if (!silencioso) {
+        this.snackBar.open('No hay ventas offline pendientes en IndexedDB. Todo sincronizado en la nube.', 'OK', { duration: 3000 });
+      }
+      return;
+    }
+
+    if (!this.isOnline) {
+      if (!silencioso) {
+        this.snackBar.open('Sin conexión a internet. Las ventas permanecen resguardadas en IndexedDB.', 'Cerrar', { duration: 3500 });
+      }
+      return;
+    }
+
+    this.sincronizandoVentas = true;
+    if (!silencioso) {
+      this.snackBar.open(`Sincronizando ${pendientes.length} venta(s) offline con la nube...`, '', { duration: 2500 });
+    }
+
+    try {
+      // Mapear al DTO esperado por el endpoint /api/v1/cobros-offline/lote
+      const payload: RegistroCobroOfflineRequest[] = pendientes.map(p => ({
+        sucursal_id: p.sucursal_id,
+        monto: p.monto,
+        moneda: p.moneda || 'BOB',
+        nro_recibo_provisional: p.nro_recibo_provisional,
+        uuid_operacion: p.uuid_operacion,
+        cliente_nombre: p.cliente_nombre,
+        cliente_nit: p.cliente_nit || '0',
+        efectivo_recibido: p.efectivo_recibido,
+        cambio: p.cambio,
+        observaciones: p.observaciones || 'Venta POS Offline resguardada en IndexedDB',
+        fecha_cobro: p.fecha_cobro,
+        items: p.items.map(it => ({
+          variante_id: it.variante_id,
+          producto_nombre: it.producto_nombre,
+          talla: it.talla || 'M',
+          color: it.color || 'Estándar',
+          cantidad: it.cantidad,
+          precio_unitario: it.precio_unitario,
+          subtotal: it.subtotal
+        }))
+      }));
+
+      this.cobroOfflineService.subirLote(payload).subscribe({
+        next: async (res) => {
+          if (res.exito) {
+            const foliosMap = pendientes.map(p => ({
+              nro_recibo_provisional: p.nro_recibo_provisional
+            }));
+
+            await this.posIndexedDb.marcarVentasSincronizadas(foliosMap);
+            await this.actualizarContadorPendientes();
+            this.sincronizandoVentas = false;
+
+            this.snackBar.open(
+              `¡${pendientes.length} venta(s) offline sincronizada(s) exitosamente con la base de datos central en la nube!`,
+              'Excelente',
+              { duration: 5000 }
+            );
+
+            // Refrescar inventario fresco desde la nube
+            const sucursalId = this.sucursalControl.value;
+            if (sucursalId) {
+              this.cargarInventarioSucursal(sucursalId);
+            }
+          }
+        },
+        error: (err) => {
+          console.error('Error al subir lote a la nube:', err);
+          this.sincronizandoVentas = false;
+          if (!silencioso) {
+            this.snackBar.open('No se pudo conectar con el servidor central. Las ventas siguen seguras en IndexedDB.', 'Cerrar', { duration: 4000 });
+          }
+        }
+      });
+    } catch (e) {
+      console.error('Excepción al sincronizar lote:', e);
+      this.sincronizandoVentas = false;
+    }
+  }
+}
