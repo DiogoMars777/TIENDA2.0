@@ -7,6 +7,7 @@ from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
 from sqlalchemy.orm import relationship, synonym
 from datetime import datetime
 from app.core.database import Base
+from app.core.timezone import get_bolivia_now
 
 
 class Inventario(Base):
@@ -17,7 +18,7 @@ class Inventario(Base):
     stockfisico = Column(Integer, default=0, nullable=False)
     stockreservado = Column(Integer, default=0, nullable=False)
     stockminimo = Column(Integer, default=5, nullable=False)
-    fechaactualizacion = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    fechaactualizacion = Column(DateTime, default=get_bolivia_now, onupdate=get_bolivia_now)
     sucursalid = Column(Integer, ForeignKey("sucursal.id"), nullable=False)
     varianteid = Column(Integer, ForeignKey("variante_producto.id"), nullable=False)
 
@@ -38,7 +39,7 @@ class MovimientoInventario(Base):
     cantidad = Column(Integer, nullable=False)
     motivo = Column(String(200), nullable=True)
     referencia = Column(String(100), nullable=True)
-    fecha = Column(DateTime, default=datetime.utcnow)
+    fecha = Column(DateTime, default=get_bolivia_now)
     inventarioid = Column(Integer, ForeignKey("inventario.id"), nullable=False)
     usuarioid = Column(Integer, ForeignKey("usuario.id"), nullable=False)
 

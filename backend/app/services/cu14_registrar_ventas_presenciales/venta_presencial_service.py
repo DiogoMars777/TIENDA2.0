@@ -12,6 +12,8 @@ import random
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 
+from app.core.timezone import get_bolivia_now
+
 from app.models.cu14_registrar_ventas_presenciales.venta_presencial_model import (
     VentaModel,
     DetalleVentaModel,
@@ -271,7 +273,7 @@ class VentaPresencialService:
             })
 
         # 5. Generar Venta Presencial
-        ahora = datetime.utcnow()
+        ahora = get_bolivia_now()
         codigo_venta = f"POS-{ahora.strftime('%Y%m%d%H%M')}-{random.randint(100, 999)}"
 
         nueva_venta = VentaModel(

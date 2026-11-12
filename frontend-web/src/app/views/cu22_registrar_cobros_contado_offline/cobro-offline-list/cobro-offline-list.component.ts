@@ -169,7 +169,14 @@ export class CobroOfflineListComponent implements OnInit {
 
   abrirModalNuevoCobro(): void {
     const ahora = new Date();
-    const fechaStr = ahora.toISOString().slice(0, 10).replace(/-/g, '');
+    // Obtener fecha oficial en la zona horaria de Bolivia (America/La_Paz, UTC-4)
+    const fechaBolivia = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/La_Paz',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(ahora);
+    const fechaStr = fechaBolivia.replace(/-/g, '');
     const randNum = Math.floor(1000 + Math.random() * 9000);
     const defaultSucId = this.sucursales.length > 0 ? this.sucursales[0].id : 1;
 
@@ -184,6 +191,7 @@ export class CobroOfflineListComponent implements OnInit {
       efectivo_recibido: 0,
       cambio: 0,
       observaciones: 'Cobro de contado emitido bajo contingencia de red',
+      fecha_cobro: ahora.toISOString(),
       items: []
     };
 

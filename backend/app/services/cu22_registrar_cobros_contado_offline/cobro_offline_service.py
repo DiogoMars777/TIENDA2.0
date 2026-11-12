@@ -18,6 +18,7 @@ from app.controllers.cu26_gestionar_bitacora.bitacora_controller import Bitacora
 from app.schemas.cu22_registrar_cobros_contado_offline.cobro_offline_schema import (
     CobroOfflineCreate, ItemCobroOffline
 )
+from app.core.timezone import get_bolivia_now, to_bolivia_time
 
 
 class CobroOfflineService:
@@ -120,6 +121,8 @@ class CobroOfflineService:
         if folio_existente:
             folio = f"{folio}-{str(uuid.uuid4())[:4].upper()}"
 
+        fecha_efectiva = to_bolivia_time(getattr(data, "fecha_cobro", None)) or get_bolivia_now()
+
         nuevo_cobro = CobroOffline(
             tenant_id=tenant_id,
             cajero_id=cajero_id,
@@ -131,7 +134,7 @@ class CobroOfflineService:
             cliente_nombre=data.cliente_nombre.strip() if data.cliente_nombre else "Cliente Ocasional",
             cliente_nit=data.cliente_nit.strip() if data.cliente_nit else "0",
             observaciones=obs_json,
-            fecha_cobro=datetime.utcnow(),
+            fecha_cobro=fecha_efectiva,
             sincronizado=False
         )
         db.add(nuevo_cobro)
@@ -246,7 +249,7 @@ class CobroOfflineService:
         if not cobro:
             return None
         cobro.sincronizado = True
-        cobro.fecha_sincronizacion = datetime.utcnow()
+        cobro.fecha_sincronizacion = get_bolivia_now()
         if venta_id:
             cobro.venta_id = venta_id
         db.commit()

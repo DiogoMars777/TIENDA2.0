@@ -20,6 +20,7 @@ from app.models.cu3_gestionar_clientes.cliente_model import ClienteModel
 from app.models.cu4_gestionar_sucursales.sucursal_model import SucursalModel
 from app.models.cu1_gestionar_autenticacion.usuario_rol_model import UsuarioModel
 from app.controllers.cu26_gestionar_bitacora.bitacora_controller import BitacoraController
+from app.core.timezone import get_bolivia_now, to_bolivia_time
 
 
 class SincronizacionOfflineService:
@@ -91,7 +92,7 @@ class SincronizacionOfflineService:
 
                 if sync_previo and sync_previo.estado in ("SINCRONIZADO", "CONFLICTO_RESUELTO"):
                     cobro.sincronizado = True
-                    cobro.fecha_sincronizacion = datetime.utcnow()
+                    cobro.fecha_sincronizacion = get_bolivia_now()
                     procesadas += 1
                     sincronizadas += 1
                     resultados.append({
@@ -296,7 +297,7 @@ class SincronizacionOfflineService:
 
                     # Marcar CobroOffline
                     cobro.sincronizado = True
-                    cobro.fecha_sincronizacion = datetime.utcnow()
+                    cobro.fecha_sincronizacion = get_bolivia_now()
                     cobro.venta_id = nueva_venta.id
 
                     # Si el cobro offline corresponde a una Reserva (ej. REC-RES-XXXXXX o nota con RES-XXXXXX), marcarla como ENTREGADA
@@ -345,14 +346,14 @@ class SincronizacionOfflineService:
                         estrategia_conflicto=estrategia_aplicada,
                         reintentos=1,
                         fecha_operacion_origen=cobro.fecha_cobro,
-                        fecha_recibido=datetime.utcnow(),
-                        fecha_procesado=datetime.utcnow() if estado_sync != "CONFLICTO_PENDIENTE" else None
+                        fecha_recibido=get_bolivia_now(),
+                        fecha_procesado=get_bolivia_now() if estado_sync != "CONFLICTO_PENDIENTE" else None
                     )
                     db.add(sync_rec)
                 else:
                     sync_previo.estado = estado_sync
                     sync_previo.estrategia_conflicto = estrategia_aplicada
-                    sync_previo.fecha_procesado = datetime.utcnow()
+                    sync_previo.fecha_procesado = get_bolivia_now()
                     sync_previo.reintentos += 1
 
                 # 6. Auditoría en Bitácora (CU26)
@@ -436,14 +437,8 @@ class SincronizacionOfflineService:
             op_uuid = op_dict.get("uuid_operacion") or str(uuid.uuid4())
             tipo = op_dict.get("tipo") or op_dict.get("tipo_operacion") or "VENTA"
             payload = op_dict.get("payload") or {}
-            fecha_origen_raw = op_dict.get("fecha_operacion") or datetime.utcnow()
-            if isinstance(fecha_origen_raw, str):
-                try:
-                    fecha_origen = datetime.fromisoformat(fecha_origen_raw.replace("Z", "+00:00"))
-                except Exception:
-                    fecha_origen = datetime.utcnow()
-            else:
-                fecha_origen = fecha_origen_raw
+            fecha_origen_raw = op_dict.get("fecha_operacion")
+            fecha_origen = to_bolivia_time(fecha_origen_raw) if fecha_origen_raw else get_bolivia_now()
 
             # Idempotencia
             existente = db.query(OperacionOfflineSync).filter(
@@ -630,8 +625,8 @@ class SincronizacionOfflineService:
                     estrategia_conflicto=estrategia_aplicada,
                     reintentos=1,
                     fecha_operacion_origen=fecha_origen,
-                    fecha_recibido=datetime.utcnow(),
-                    fecha_procesado=datetime.utcnow() if estado_op != "CONFLICTO_PENDIENTE" else None
+                    fecha_recibido=get_bolivia_now(),
+                    fecha_procesado=get_bolivia_now() if estado_op != "CONFLICTO_PENDIENTE" else None
                 )
                 db.add(sync_reg)
 
@@ -802,7 +797,7 @@ class SincronizacionOfflineService:
 
         sync_op.estado = "CONFLICTO_RESUELTO"
         sync_op.estrategia_conflicto = estrategia
-        sync_op.fecha_procesado = datetime.utcnow()
+        sync_op.fecha_procesado = get_bolivia_now()
         sync_op.error_detalle = notas
 
         # Si corresponde a un CobroOffline, marcarlo sincronizado
@@ -811,7 +806,7 @@ class SincronizacionOfflineService:
         ).first()
         if cobro:
             cobro.sincronizado = True
-            cobro.fecha_sincronizacion = datetime.utcnow()
+            cobro.fecha_sincronizacion = get_bolivia_now()
 
         db.commit()
 

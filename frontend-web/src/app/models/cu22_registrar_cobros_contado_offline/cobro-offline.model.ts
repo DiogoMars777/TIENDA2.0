@@ -48,6 +48,7 @@ export interface RegistroCobroOfflineRequest {
   efectivo_recibido?: number;
   cambio?: number;
   observaciones?: string;
+  fecha_cobro?: string;
   items?: ItemCobroOfflineDTO[];
 }
 

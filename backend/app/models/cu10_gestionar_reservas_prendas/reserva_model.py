@@ -7,6 +7,7 @@ from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Text
 from sqlalchemy.orm import relationship
 from datetime import datetime, timedelta
 from app.core.database import Base
+from app.core.timezone import get_bolivia_now
 
 
 class Reserva(Base):
@@ -15,7 +16,7 @@ class Reserva(Base):
     id = Column(Integer, primary_key=True, index=True)
     tenant_id = Column(Integer, ForeignKey("tenant.id", ondelete="CASCADE"), nullable=False, default=1)
     codigoreserva = Column(String(100), unique=True, nullable=False, index=True)
-    fechareserva = Column(DateTime, default=datetime.utcnow, nullable=False)
+    fechareserva = Column(DateTime, default=get_bolivia_now, nullable=False)
     estado = Column(String(50), default="PENDIENTE", nullable=False)  # PENDIENTE, CONFIRMADA, PAGADA, ENTREGADA, CANCELADA, EXPIRADA
     observaciones = Column(Text, nullable=True)
     sucursalid = Column(Integer, ForeignKey("sucursal.id", ondelete="RESTRICT"), nullable=False, index=True)
@@ -28,12 +29,12 @@ class Reserva(Base):
     @property
     def fecha_expiracion(self) -> datetime:
         """Vencimiento de 48 horas oficiales para retiro físico en tienda"""
-        return (self.fechareserva or datetime.utcnow()) + timedelta(hours=48)
+        return (self.fechareserva or get_bolivia_now()) + timedelta(hours=48)
 
     @property
     def es_expirada(self) -> bool:
         """Indica si han transcurrido más de 48 horas desde la creación de la reserva"""
-        return datetime.utcnow() > self.fecha_expiracion
+        return get_bolivia_now() > self.fecha_expiracion
 
 
 class ReservaDetalle(Base):

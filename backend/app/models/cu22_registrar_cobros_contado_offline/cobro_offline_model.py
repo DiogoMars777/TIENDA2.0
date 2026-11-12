@@ -6,6 +6,7 @@
 from sqlalchemy import Column, Integer, String, Numeric, Boolean, DateTime, ForeignKey, Text
 from datetime import datetime
 from app.core.database import Base
+from app.core.timezone import get_bolivia_now
 
 
 class CobroOffline(Base):
@@ -26,7 +27,7 @@ class CobroOffline(Base):
     cliente_nombre = Column(String(120), nullable=True)
     cliente_nit = Column(String(30), nullable=True)
     observaciones = Column(Text, nullable=True)
-    fecha_cobro = Column(DateTime, default=datetime.utcnow, index=True)
+    fecha_cobro = Column(DateTime, default=get_bolivia_now, index=True)
     sincronizado = Column(Boolean, default=False, index=True)
     fecha_sincronizacion = Column(DateTime, nullable=True)
     venta_id = Column(Integer, ForeignKey("venta.id", ondelete="SET NULL"), nullable=True)

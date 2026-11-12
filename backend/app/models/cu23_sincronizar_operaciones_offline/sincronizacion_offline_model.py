@@ -6,6 +6,7 @@
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Boolean
 from datetime import datetime
 from app.core.database import Base
+from app.core.timezone import get_bolivia_now
 
 
 class OperacionOfflineSync(Base):
@@ -27,7 +28,7 @@ class OperacionOfflineSync(Base):
     reintentos = Column(Integer, default=0)
     error_detalle = Column(Text, nullable=True)
     fecha_operacion_origen = Column(DateTime, nullable=False)
-    fecha_recibido = Column(DateTime, default=datetime.utcnow)
+    fecha_recibido = Column(DateTime, default=get_bolivia_now)
     fecha_procesado = Column(DateTime, nullable=True)
 
 

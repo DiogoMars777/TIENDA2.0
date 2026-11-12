@@ -218,7 +218,7 @@
         <tr *ngFor="let log of ctrl.logsFiltrados()">
           <td>
             <div class="td-id">#{{ log.id }}</div>
-            <div class="td-date">{{ log.fecha_operacion_origen | date:'short' }}</div>
+            <div class="td-date">{{ log.fecha_operacion_origen | date:'dd/MM/yyyy HH:mm' }}</div>
           </td>
 
           <td>

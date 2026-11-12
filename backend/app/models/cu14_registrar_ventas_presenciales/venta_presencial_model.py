@@ -7,6 +7,7 @@ from sqlalchemy import Column, Integer, String, Numeric, DateTime, ForeignKey, B
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.core.database import Base
+from app.core.timezone import get_bolivia_now
 
 
 class Venta(Base):
@@ -20,7 +21,7 @@ class Venta(Base):
     subtotal = Column(Numeric(12, 2), nullable=False)
     descuento = Column(Numeric(12, 2), default=0)
     total = Column(Numeric(12, 2), nullable=False)
-    fecha = Column(DateTime, default=datetime.utcnow)
+    fecha = Column(DateTime, default=get_bolivia_now)
     sucursalid = Column(Integer, ForeignKey("sucursal.id"), nullable=False)
     clienteid = Column(Integer, ForeignKey("cliente.id"), nullable=False)
     usuarioid = Column(Integer, ForeignKey("usuario.id"), nullable=False)
@@ -60,7 +61,7 @@ class Recibo(Base):
     id = Column(Integer, primary_key=True, index=True)
     tenant_id = Column(Integer, ForeignKey("tenant.id", ondelete="CASCADE"), nullable=False, default=1)
     estado = Column(String(50), nullable=False, default="Emitido")
-    fecha = Column(DateTime, default=datetime.utcnow, nullable=False)
+    fecha = Column(DateTime, default=get_bolivia_now, nullable=False)
 
 
 class Pago(Base):
@@ -71,7 +72,7 @@ class Pago(Base):
     monto = Column(Numeric(12, 2), nullable=False)
     estado = Column(String(50), nullable=False, default="Aprobado")
     referencia = Column(String(150), nullable=True)
-    fecha = Column(DateTime, default=datetime.utcnow)
+    fecha = Column(DateTime, default=get_bolivia_now)
     ventaid = Column(Integer, ForeignKey("venta.id"), nullable=False)
     reciboid = Column(Integer, ForeignKey("recibo.id"), nullable=True)
     metodoid = Column(Integer, ForeignKey("metodo_pago.id"), nullable=False)

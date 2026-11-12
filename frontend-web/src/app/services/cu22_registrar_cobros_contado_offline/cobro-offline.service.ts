@@ -76,7 +76,7 @@ export class CobroOfflineService {
       uuid_operacion: registro.uuid_operacion || `offline-uuid-${mockId}`,
       cliente_nombre: registro.cliente_nombre || 'Cliente Mostrador',
       cliente_nit: registro.cliente_nit || '0',
-      fecha_cobro: new Date().toISOString(),
+      fecha_cobro: registro.fecha_cobro || new Date().toISOString(),
       sincronizado: false,
       items: registro.items,
       efectivo_recibido: registro.efectivo_recibido,

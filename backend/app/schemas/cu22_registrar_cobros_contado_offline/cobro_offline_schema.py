@@ -30,6 +30,7 @@ class CobroOfflineCreate(BaseModel):
     efectivo_recibido: Optional[Decimal] = Field(None, ge=0, description="Efectivo entregado por el cliente")
     cambio: Optional[Decimal] = Field(None, ge=0, description="Cambio devuelto")
     observaciones: Optional[str] = Field(None, description="Detalles o notas adicionales")
+    fecha_cobro: Optional[datetime] = Field(None, description="Fecha y hora de emisión del cobro en el terminal")
     items: Optional[List[ItemCobroOffline]] = Field(default_factory=list, description="Desglose de prendas vendidas")
 
 
