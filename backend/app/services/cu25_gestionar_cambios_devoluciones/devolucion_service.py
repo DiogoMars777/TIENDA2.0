@@ -22,6 +22,7 @@ from app.models.cu4_gestionar_sucursales.sucursal_model import SucursalModel
 from app.models.cu1_gestionar_autenticacion.usuario_rol_model import UsuarioModel
 from app.models.cu19_gestionar_notificaciones.notificacion_model import NotificacionModel
 from app.controllers.cu26_gestionar_bitacora.bitacora_controller import BitacoraController
+from app.core.timezone import get_bolivia_now
 
 
 class DevolucionService:
@@ -77,7 +78,7 @@ class DevolucionService:
                 "venta_valida": False,
                 "venta_id": int(raw_query) if raw_query.isdigit() else 0,
                 "codigoventa": "NO_EXISTE",
-                "fecha_venta": datetime.utcnow(),
+                "fecha_venta": get_bolivia_now(),
                 "dias_transcurridos": 0,
                 "dentro_de_plazo": False,
                 "plazo_maximo_dias": plazo_dias,
@@ -88,7 +89,7 @@ class DevolucionService:
                 "mensaje": f"No se encontró la venta '{raw_query}' en tu empresa actual."
             }
 
-        ahora = datetime.utcnow()
+        ahora = get_bolivia_now()
         dias_transcurridos = max(0, (ahora - (venta.fecha or ahora)).days)
         dentro_de_plazo = dias_transcurridos <= plazo_dias
 
@@ -167,7 +168,7 @@ class DevolucionService:
             VentaModel.tenant_id == tenant_id
         ).first()
 
-        codigo = f"DEV-{datetime.utcnow().strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
+        codigo = f"DEV-{get_bolivia_now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
         cli_id = cliente_id or (venta.clienteid if venta else 1)
         if venta and venta.sucursalid:
             sucursal_id = venta.sucursalid
@@ -184,8 +185,8 @@ class DevolucionService:
             estado="APROBADA",
             monto_reembolso=monto_reembolso,
             reingreso_inventario=True,
-            fecha_solicitud=datetime.utcnow(),
-            fecha_resolucion=datetime.utcnow()
+            fecha_solicitud=get_bolivia_now(),
+            fecha_resolucion=get_bolivia_now()
         )
         db.add(devolucion)
         db.flush()

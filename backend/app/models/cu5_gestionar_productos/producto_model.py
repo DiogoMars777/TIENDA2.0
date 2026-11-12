@@ -8,6 +8,7 @@ from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime, T
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.core.database import Base
+from app.core.timezone import get_bolivia_now
 
 
 class Producto(Base):
@@ -23,8 +24,8 @@ class Producto(Base):
     preciobase = Column(Numeric(10, 2), nullable=False, default=0.00)
     imagenprincipal = Column(Text, nullable=True)
     activo = Column(Boolean, default=True)
-    fechacreacion = Column(DateTime, default=datetime.utcnow)
-    fechaactualizacion = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    fechacreacion = Column(DateTime, default=get_bolivia_now)
+    fechaactualizacion = Column(DateTime, default=get_bolivia_now, onupdate=get_bolivia_now)
     categoriaid = Column(Integer, ForeignKey("categoria.id"), nullable=True)
 
     categoria = relationship("Categoria", back_populates="productos")
@@ -78,7 +79,7 @@ class VarianteProducto(Base):
     imagenurl = Column(Text, nullable=True)
     precioventa = Column(Numeric(10, 2), nullable=True)
     activo = Column(Boolean, default=True)
-    fechacreacion = Column(DateTime, default=datetime.utcnow)
+    fechacreacion = Column(DateTime, default=get_bolivia_now)
 
     producto = relationship("Producto", back_populates="variantes")
     color = relationship("Color")

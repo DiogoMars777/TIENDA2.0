@@ -307,12 +307,14 @@ class _MyReservationsViewState extends State<MyReservationsView> {
             icon: const Icon(Icons.sync, color: Color(0xFF38BDF8)),
             tooltip: 'Sincronizar Reservas',
             onPressed: () async {
-              final token = context.read<AuthController>().currentUser?.token;
-              final syncCount = await context.read<ReservationController>().sincronizarReservasOffline(
+              final authCtrl = context.read<AuthController>();
+              final resCtrl = context.read<ReservationController>();
+              final token = authCtrl.currentUser?.token;
+              final syncCount = await resCtrl.sincronizarReservasOffline(
                 tenantId: prodCtrl.empresaSeleccionadaId,
                 token: token,
               );
-              await context.read<ReservationController>().cargarMisReservas(
+              await resCtrl.cargarMisReservas(
                 token: token,
                 tenantId: prodCtrl.empresaSeleccionadaId,
                 modoOfflineSimulado: prodCtrl.modoOfflineSimulado,
@@ -403,16 +405,27 @@ class _MyReservationsViewState extends State<MyReservationsView> {
                                   token: token,
                                 );
                                 if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        count > 0
-                                            ? '¡$count reserva(s) offline sincronizadas exitosamente con la tienda!'
-                                            : 'Aún sin conexión al servidor. Se sincronizarán al conectar internet.',
+                                  if (controller.alertaCancelacionStock != null) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(controller.alertaCancelacionStock!),
+                                        backgroundColor: Colors.red.shade800,
+                                        duration: const Duration(seconds: 6),
                                       ),
-                                      backgroundColor: count > 0 ? Colors.green : Colors.orange.shade800,
-                                    ),
-                                  );
+                                    );
+                                    controller.limpiarAlertaStock();
+                                  } else {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          count > 0
+                                              ? '¡$count reserva(s) offline sincronizadas exitosamente con la tienda!'
+                                              : 'Aún sin conexión al servidor. Se sincronizarán al conectar internet.',
+                                        ),
+                                        backgroundColor: count > 0 ? Colors.green : Colors.orange.shade800,
+                                      ),
+                                    );
+                                  }
                                 }
                               },
                         child: Text(
@@ -569,6 +582,33 @@ class _MyReservationsViewState extends State<MyReservationsView> {
                           ),
                         ],
 
+                        if (reserva.estado == 'CANCELADA') ...[
+                          const SizedBox(height: 8),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.red.withAlpha(30),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.red.withAlpha(100)),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.cancel_outlined, color: Colors.redAccent, size: 16),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    reserva.observaciones != null && (reserva.observaciones!.contains('Stock') || reserva.observaciones!.contains('AUTOMÁTICAMENTE'))
+                                        ? 'CANCELADA AUTOMÁTICAMENTE: Stock agotado al sincronizar. La última unidad ya fue adquirida por otro cliente.'
+                                        : 'RESERVA CANCELADA',
+                                    style: const TextStyle(color: Colors.redAccent, fontSize: 11, fontWeight: FontWeight.w600),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+
                         const Divider(color: Colors.white12, height: 24),
 
                         // Footer con Total y Acciones
@@ -645,7 +685,7 @@ class _MyReservationsViewState extends State<MyReservationsView> {
                                         ),
                                       );
 
-                                      if (confirmar == true) {
+                                      if (confirmar == true && context.mounted) {
                                         final token = context.read<AuthController>().currentUser?.token;
                                         await controller.cancelarReserva(
                                           reserva.id,

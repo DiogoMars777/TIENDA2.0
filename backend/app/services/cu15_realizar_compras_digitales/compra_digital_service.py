@@ -28,6 +28,7 @@ from app.models.cu1_gestionar_autenticacion.usuario_rol_model import UsuarioMode
 from app.models.cu19_gestionar_notificaciones.notificacion_model import NotificacionModel
 from app.controllers.cu26_gestionar_bitacora.bitacora_controller import BitacoraController
 from app.schemas.orden_schema import OrdenCreate, ActualizarEstadoOrdenRequest
+from app.core.timezone import get_bolivia_now
 
 
 class CompraDigitalService:
@@ -197,7 +198,7 @@ class CompraDigitalService:
             })
 
         # 4. Crear venta digital en BD
-        ahora = datetime.utcnow()
+        ahora = get_bolivia_now()
         codigo_venta = f"ORD-{ahora.strftime('%Y%m%d%H%M')}-{random.randint(100, 999)}"
 
         nueva_venta = VentaModel(
@@ -601,7 +602,7 @@ class CompraDigitalService:
                 tipo="ESTADO_PEDIDO",
                 enlace="/mis-pedidos",
                 leido=False,
-                fecha_creacion=datetime.utcnow()
+                fecha_creacion=get_bolivia_now()
             )
             db.add(notif)
             db.commit()

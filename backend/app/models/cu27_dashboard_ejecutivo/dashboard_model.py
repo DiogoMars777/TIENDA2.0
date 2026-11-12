@@ -6,6 +6,7 @@
 from sqlalchemy import Column, Integer, String, Text, Numeric, DateTime, ForeignKey, Boolean
 from datetime import datetime
 from app.core.database import Base
+from app.core.timezone import get_bolivia_now
 
 
 class MetricaDashboard(Base):
@@ -21,7 +22,7 @@ class MetricaDashboard(Base):
     total_pedidos = Column(Integer, default=0)
     total_reservas_activas = Column(Integer, default=0)
     total_clientes_nuevos = Column(Integer, default=0)
-    fecha_corte = Column(DateTime, default=datetime.utcnow, index=True)
+    fecha_corte = Column(DateTime, default=get_bolivia_now, index=True)
 
 
 DashboardMetricaModel = MetricaDashboard

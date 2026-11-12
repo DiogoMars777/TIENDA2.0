@@ -7,6 +7,7 @@ from sqlalchemy import Column, Integer, String, Text, Numeric, DateTime, Foreign
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.core.database import Base
+from app.core.timezone import get_bolivia_now
 
 
 class Devolucion(Base):
@@ -28,8 +29,8 @@ class Devolucion(Base):
     estado = Column(String(30), default="APROBADA", index=True)  # PENDIENTE, APROBADA, RECHAZADA, COMPLETADA
     monto_reembolso = Column(Numeric(12, 2), default=0.0)
     reingreso_inventario = Column(Boolean, default=True)
-    fecha_solicitud = Column(DateTime, default=datetime.utcnow)
-    fecha_resolucion = Column(DateTime, default=datetime.utcnow)
+    fecha_solicitud = Column(DateTime, default=get_bolivia_now)
+    fecha_resolucion = Column(DateTime, default=get_bolivia_now)
 
     detalles = relationship("DetalleDevolucion", back_populates="devolucion", cascade="all, delete-orphan")
 

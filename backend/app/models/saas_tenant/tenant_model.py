@@ -10,6 +10,7 @@ from datetime import datetime
 import uuid
 
 from app.core.database import Base
+from app.core.timezone import get_bolivia_now
 
 
 class PlanSuscripcion(Base):
@@ -25,7 +26,7 @@ class PlanSuscripcion(Base):
     habilitar_reportes_ia = Column(Boolean, default=False)
     habilitar_vestidor_ia = Column(Boolean, default=False)
     activo = Column(Boolean, default=True)
-    fechacreacion = Column(DateTime, default=datetime.utcnow)
+    fechacreacion = Column(DateTime, default=get_bolivia_now)
 
     tenants = relationship("Tenant", back_populates="plan")
     suscripciones = relationship("TenantSuscripcion", back_populates="plan")
@@ -46,7 +47,7 @@ class Tenant(Base):
     logo_url = Column(Text, nullable=True)
     plan_id = Column(Integer, ForeignKey("plan_suscripcion.id"), nullable=True)
     activo = Column(Boolean, default=True)
-    fechacreacion = Column(DateTime, default=datetime.utcnow)
+    fechacreacion = Column(DateTime, default=get_bolivia_now)
 
     plan = relationship("PlanSuscripcion", back_populates="tenants")
     configuracion = relationship("TenantConfiguracion", back_populates="tenant", uselist=False)
@@ -78,7 +79,7 @@ class TenantSuscripcion(Base):
     id = Column(Integer, primary_key=True, index=True)
     tenant_id = Column(Integer, ForeignKey("tenant.id", ondelete="CASCADE"), nullable=False)
     plan_id = Column(Integer, ForeignKey("plan_suscripcion.id"), nullable=False)
-    fecha_inicio = Column(DateTime, default=datetime.utcnow, nullable=False)
+    fecha_inicio = Column(DateTime, default=get_bolivia_now, nullable=False)
     fecha_fin = Column(DateTime, nullable=False)
     estado = Column(String(20), default="ACTIVA")
     monto_pagado = Column(Numeric(10, 2), nullable=False)
@@ -111,7 +112,7 @@ class EventoCliente(Base):
     tenant_id = Column(Integer, ForeignKey("tenant.id", ondelete="CASCADE"), nullable=False, default=1)
     cliente_id = Column(Integer, ForeignKey("cliente.id", ondelete="CASCADE"), nullable=True)
     tipoevento = Column(String(80), nullable=False)
-    fecha = Column(DateTime, default=datetime.utcnow)
+    fecha = Column(DateTime, default=get_bolivia_now)
     datos_metadata = Column("metadata", Text, nullable=True)
 
 
@@ -124,7 +125,7 @@ class PruebaVirtual(Base):
     variante_id = Column(Integer, ForeignKey("variante_producto.id", ondelete="SET NULL"), nullable=True)
     imagenresultadourl = Column(Text, nullable=False)
     dispositivo = Column(String(50), nullable=True)
-    fecha = Column(DateTime, default=datetime.utcnow)
+    fecha = Column(DateTime, default=get_bolivia_now)
 
 
 class ProductoColeccion(Base):

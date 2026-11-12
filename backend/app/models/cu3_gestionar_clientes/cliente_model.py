@@ -7,6 +7,7 @@ from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime, D
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.core.database import Base
+from app.core.timezone import get_bolivia_now
 from app.models.cu1_gestionar_autenticacion.usuario_rol_model import Usuario, Rol, UsuarioModel, RolModel
 
 
@@ -22,7 +23,7 @@ class Cliente(Base):
     fechanac = Column(Date, nullable=True)
     genero = Column(String(30), nullable=True)
     activo = Column(Boolean, default=True)
-    fecharegistro = Column(DateTime, default=datetime.utcnow)
+    fecharegistro = Column(DateTime, default=get_bolivia_now)
     usuarioid = Column(Integer, ForeignKey("usuario.id", ondelete="CASCADE"), nullable=True)
 
     usuario = relationship("Usuario")

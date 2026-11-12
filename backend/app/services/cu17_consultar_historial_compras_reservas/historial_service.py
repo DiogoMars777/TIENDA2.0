@@ -22,6 +22,7 @@ from app.models.cu5_gestionar_productos.producto_model import (
 from app.models.cu4_gestionar_sucursales.sucursal_model import SucursalModel
 from app.models.cu3_gestionar_clientes.cliente_model import ClienteModel
 from app.models.cu1_gestionar_autenticacion.usuario_rol_model import UsuarioModel
+from app.core.timezone import get_bolivia_now
 
 
 def generar_qr_base64(contenido: str) -> str:
@@ -47,7 +48,7 @@ class HistorialService:
     def _calcular_tracking(venta: VentaModel) -> List[Dict[str, Any]]:
         """Genera el timeline de seguimiento logístico para la venta"""
         estado = (venta.estado or "Pendiente").lower()
-        fecha_base = venta.fecha or datetime.utcnow()
+        fecha_base = venta.fecha or get_bolivia_now()
 
         paso1 = {"paso": 1, "titulo": "Pedido Registrado", "fecha": fecha_base.strftime("%d/%m/%Y %H:%M"), "completado": True}
         paso2 = {"paso": 2, "titulo": "Pago Confirmado", "fecha": (fecha_base + timedelta(minutes=5)).strftime("%d/%m/%Y %H:%M"), "completado": False}
@@ -240,7 +241,7 @@ class HistorialService:
         ).order_by(ReservaModel.id.desc()).all()
 
         resultado = []
-        ahora = datetime.utcnow()
+        ahora = get_bolivia_now()
 
         for r in reservas:
             suc = db.query(SucursalModel).filter(SucursalModel.id == r.sucursalid).first()

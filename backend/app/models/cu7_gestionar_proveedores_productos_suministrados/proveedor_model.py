@@ -7,6 +7,7 @@ from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime, N
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.core.database import Base
+from app.core.timezone import get_bolivia_now
 
 
 class Proveedor(Base):
@@ -22,7 +23,7 @@ class Proveedor(Base):
     email = Column(String(150), nullable=True)
     direccion = Column(String(255), nullable=True)
     activo = Column(Boolean, default=True)
-    fechacreacion = Column(DateTime, default=datetime.utcnow)
+    fechacreacion = Column(DateTime, default=get_bolivia_now)
 
     productos_suministrados = relationship("ProductoProveedor", back_populates="proveedor")
 

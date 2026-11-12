@@ -13,6 +13,7 @@ from app.models.cu10_gestionar_reservas_prendas.reserva_model import ReservaMode
 from app.models.cu13_gestionar_inventario_movimientos.inventario_model import InventarioModel
 from app.models.cu1_gestionar_autenticacion.usuario_rol_model import UsuarioModel
 from app.models.cu3_gestionar_clientes.cliente_model import ClienteModel
+from app.core.timezone import get_bolivia_now
 
 
 class NotificacionService:
@@ -36,7 +37,7 @@ class NotificacionService:
             tipo=tipo,
             enlace=enlace,
             leido=False,
-            fecha_creacion=datetime.utcnow()
+            fecha_creacion=get_bolivia_now()
         )
         db.add(notif)
         db.commit()
@@ -50,7 +51,7 @@ class NotificacionService:
         tenant_id: int = 1
     ) -> None:
         """Genera notificaciones proactivas según eventos del negocio (expiración de reservas, stock bajo)."""
-        ahora = datetime.utcnow()
+        ahora = get_bolivia_now()
 
         # 1. Alertas de reservas próximas a vencer (< 6 horas antes de 48h)
         cliente = db.query(ClienteModel).filter(

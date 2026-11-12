@@ -16,6 +16,7 @@ from app.models.cu13_gestionar_inventario_movimientos.inventario_model import In
 from app.models.cu14_registrar_ventas_presenciales.venta_presencial_model import (
     VentaModel, DetalleVentaModel, PagoModel
 )
+from app.models.cu10_gestionar_reservas_prendas.reserva_model import ReservaModel, ReservaDetalleModel
 from app.models.cu3_gestionar_clientes.cliente_model import ClienteModel
 from app.models.cu4_gestionar_sucursales.sucursal_model import SucursalModel
 from app.models.cu1_gestionar_autenticacion.usuario_rol_model import UsuarioModel
@@ -454,6 +455,224 @@ class SincronizacionOfflineService:
                     "conflicto_detectado": False,
                     "estrategia_aplicada": existente.estrategia_conflicto
                 })
+                continue
+
+            if tipo.upper() in ("RESERVA", "RESERVA_OFFLINE"):
+                try:
+                    items = payload.get("items", [])
+                    cod_reserva = payload.get("codigo_reserva") or payload.get("nro_recibo")
+                    if not cod_reserva:
+                        import re
+                        m = re.search(r"(RES-OFF-[A-Z0-9]+)", str(payload.get("observaciones", "")).upper())
+                        cod_reserva = m.group(1) if m else f"RES-OFF-{uuid.uuid4().hex[:6].upper()}"
+
+                    target_sucursal = payload.get("sucursal_id") or sucursal_id
+                    target_cliente = payload.get("cliente_id") or payload.get("usuario_id") or usuario_id or cliente_id_default
+
+                    # Idempotencia: Verificar si ya existe reserva registrada
+                    res_existente = db.query(ReservaModel).filter(
+                        ReservaModel.tenant_id == tenant_id,
+                        ReservaModel.codigoreserva == cod_reserva
+                    ).first()
+
+                    if res_existente:
+                        resultados.append({
+                            "uuid_operacion": op_uuid,
+                            "tipo": tipo,
+                            "estado": "DUPLICADO_IGNORADO",
+                            "mensaje": f"La reserva #{cod_reserva} ya se encuentra registrada en el sistema.",
+                            "reserva_id": res_existente.id,
+                            "codigo_reserva": cod_reserva,
+                            "conflicto_detectado": False,
+                            "estrategia_aplicada": "IDEMPOTENCIA"
+                        })
+                        continue
+
+                    # 1. Probar disponibilidad de stock en inventario
+                    sin_stock = False
+                    detalle_sin_stock = []
+                    inventarios_a_reservar = []
+
+                    for it in items:
+                        v_id = it.get("variante_id")
+                        cant = int(it.get("cantidad", 1))
+                        if not v_id:
+                            continue
+
+                        inv = db.query(InventarioModel).filter(
+                            InventarioModel.tenant_id == tenant_id,
+                            InventarioModel.sucursalid == target_sucursal,
+                            InventarioModel.varianteid == v_id
+                        ).first()
+
+                        stock_fisico = inv.stockfisico if (inv and inv.stockfisico is not None) else 0
+                        stock_res = inv.stockreservado if (inv and inv.stockreservado is not None) else 0
+                        disp = max(0, stock_fisico - stock_res)
+
+                        if cant > disp or disp <= 0:
+                            sin_stock = True
+                            detalle_sin_stock.append(f"Variante #{v_id} (Solicitado: {cant}, Disponible: {disp})")
+                        else:
+                            inventarios_a_reservar.append((inv, cant, v_id, it))
+
+                    # 2. Resolución de conflicto de concurrencia:
+                    if sin_stock:
+                        # Si no hay stock porque otro usuario ya sincronizó o compró antes:
+                        # Cancelar automáticamente la reserva informando que ya no hay stock.
+                        mensaje_canc = (
+                            f"No hay stock disponible para completar la reserva #{cod_reserva}. "
+                            f"La última unidad ya fue adquirida o reservada previamente por otro cliente. "
+                            f"Su reserva offline ha sido CANCELADA automáticamente."
+                        )
+
+                        reserva_cancelada = ReservaModel(
+                            tenant_id=tenant_id,
+                            codigoreserva=cod_reserva,
+                            fechareserva=fecha_origen,
+                            estado="CANCELADA",
+                            observaciones=f"[{payload.get('observaciones', '')}] [CANCELADA AUTOMÁTICAMENTE: {mensaje_canc}]".strip(),
+                            sucursalid=target_sucursal,
+                            clienteid=target_cliente
+                        )
+                        db.add(reserva_cancelada)
+                        db.flush()
+
+                        for it in items:
+                            v_id = it.get("variante_id")
+                            cant = int(it.get("cantidad", 1))
+                            if v_id:
+                                db.add(ReservaDetalleModel(
+                                    reservaid=reserva_cancelada.id,
+                                    varianteid=v_id,
+                                    cantidad=cant
+                                ))
+
+                        sync_reg = OperacionOfflineSync(
+                            tenant_id=tenant_id,
+                            usuario_id=usuario_id,
+                            sucursal_id=target_sucursal,
+                            tipo_operacion=tipo,
+                            uuid_operacion=op_uuid,
+                            payload_json=json.dumps(payload, ensure_ascii=False, default=str),
+                            estado="CONFLICTO_RESUELTO",
+                            estrategia_conflicto="CANCELACION_AUTOMATICA_SIN_STOCK",
+                            reintentos=1,
+                            fecha_operacion_origen=fecha_origen,
+                            fecha_recibido=get_bolivia_now(),
+                            fecha_procesado=get_bolivia_now()
+                        )
+                        db.add(sync_reg)
+
+                        try:
+                            from app.models.cu19_gestionar_notificaciones.notificacion_model import NotificacionModel
+                            notif = NotificacionModel(
+                                tenant_id=tenant_id,
+                                usuario_id=target_cliente,
+                                titulo=f"❌ Reserva Cancelada #{cod_reserva} (Sin Stock)",
+                                mensaje=mensaje_canc,
+                                tipo="RESERVA_CANCELADA_STOCK",
+                                enlace="/mis-reservas",
+                                leido=False,
+                                fecha_creacion=get_bolivia_now()
+                            )
+                            db.add(notif)
+                        except Exception:
+                            pass
+
+                        BitacoraController.registrar_accion(
+                            db=db,
+                            usuario_id=usuario_id,
+                            accion="CANCELAR",
+                            modulo="SINCRONIZACION_OFFLINE",
+                            detalle=f"Reserva offline #{cod_reserva} cancelada automáticamente: stock agotado por concurrencia.",
+                            tenant_id=tenant_id
+                        )
+
+                        procesadas += 1
+                        conflictos_resueltos += 1
+                        resultados.append({
+                            "uuid_operacion": op_uuid,
+                            "tipo": tipo,
+                            "estado": "CANCELADA_SIN_STOCK",
+                            "mensaje": mensaje_canc,
+                            "reserva_id": reserva_cancelada.id,
+                            "codigo_reserva": cod_reserva,
+                            "conflicto_detectado": True,
+                            "estrategia_aplicada": "CANCELACION_AUTOMATICA_SIN_STOCK"
+                        })
+
+                    else:
+                        # SI HAY STOCK: Sincronizar y apartar stock reservado en inventario
+                        for inv_obj, cant, _, _ in inventarios_a_reservar:
+                            inv_obj.stockreservado = (inv_obj.stockreservado or 0) + cant
+
+                        nueva_reserva = ReservaModel(
+                            tenant_id=tenant_id,
+                            codigoreserva=cod_reserva,
+                            fechareserva=fecha_origen,
+                            estado="PENDIENTE",
+                            observaciones=payload.get("observaciones") or f"[Reserva offline sincronizada #{cod_reserva}]",
+                            sucursalid=target_sucursal,
+                            clienteid=target_cliente
+                        )
+                        db.add(nueva_reserva)
+                        db.flush()
+
+                        for _, cant, v_id, _ in inventarios_a_reservar:
+                            db.add(ReservaDetalleModel(
+                                reservaid=nueva_reserva.id,
+                                varianteid=v_id,
+                                cantidad=cant
+                            ))
+
+                        sync_reg = OperacionOfflineSync(
+                            tenant_id=tenant_id,
+                            usuario_id=usuario_id,
+                            sucursal_id=target_sucursal,
+                            tipo_operacion=tipo,
+                            uuid_operacion=op_uuid,
+                            payload_json=json.dumps(payload, ensure_ascii=False, default=str),
+                            estado="SINCRONIZADO",
+                            estrategia_conflicto="STOCK_SUFICIENTE",
+                            reintentos=1,
+                            fecha_operacion_origen=fecha_origen,
+                            fecha_recibido=get_bolivia_now(),
+                            fecha_procesado=get_bolivia_now()
+                        )
+                        db.add(sync_reg)
+
+                        BitacoraController.registrar_accion(
+                            db=db,
+                            usuario_id=usuario_id,
+                            accion="SINCRONIZAR",
+                            modulo="SINCRONIZACION_OFFLINE",
+                            detalle=f"Reserva offline #{cod_reserva} sincronizada con éxito. Stock apartado.",
+                            tenant_id=tenant_id
+                        )
+
+                        procesadas += 1
+                        sincronizadas += 1
+                        resultados.append({
+                            "uuid_operacion": op_uuid,
+                            "tipo": tipo,
+                            "estado": "SINCRONIZADO",
+                            "mensaje": f"Reserva #{cod_reserva} sincronizada con éxito. Stock apartado en tienda.",
+                            "reserva_id": nueva_reserva.id,
+                            "codigo_reserva": cod_reserva,
+                            "conflicto_detectado": False,
+                            "estrategia_aplicada": "STOCK_SUFICIENTE"
+                        })
+
+                except Exception as e:
+                    errores += 1
+                    resultados.append({
+                        "uuid_operacion": op_uuid,
+                        "tipo": tipo,
+                        "estado": "ERROR",
+                        "mensaje": f"Fallo al procesar reserva offline: {str(e)}",
+                        "conflicto_detectado": True,
+                        "estrategia_aplicada": "FALLO_TRANSACCIONAL"
+                    })
                 continue
 
             try:

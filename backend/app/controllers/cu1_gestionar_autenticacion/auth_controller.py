@@ -25,6 +25,7 @@ ClienteModel = Cliente
 BitacoraModel = Bitacora
 from app.schemas.schemas import UsuarioCreate
 from app.core.config import settings
+from app.core.timezone import get_bolivia_now
 from app.core.security import (
     get_password_hash,
     verify_password,
@@ -269,7 +270,7 @@ class AuthController:
                 # Reenviar código OTP cifrado
                 otp_code = str(random.randint(100000, 999999))
                 hashed_otp = get_password_hash(otp_code)
-                expiracion = datetime.utcnow() + timedelta(minutes=15)
+                expiracion = get_bolivia_now() + timedelta(minutes=15)
 
                 usuario_existente.nombre = user_data.nombre
                 usuario_existente.apellido = user_data.apellido
@@ -307,7 +308,7 @@ class AuthController:
         # Generar código OTP
         otp_code = str(random.randint(100000, 999999))
         hashed_otp = get_password_hash(otp_code)
-        expiracion = datetime.utcnow() + timedelta(minutes=15)
+        expiracion = get_bolivia_now() + timedelta(minutes=15)
 
         send_otp_email(email_to=clean_email, otp_code=otp_code)
 
@@ -376,7 +377,7 @@ class AuthController:
         if not usuario.codigoverificacion or not verify_password(codigo, usuario.codigoverificacion):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Código de verificación incorrecto")
 
-        if usuario.codigoexpiracion and usuario.codigoexpiracion < datetime.utcnow():
+        if usuario.codigoexpiracion and usuario.codigoexpiracion < get_bolivia_now():
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El código de verificación ha expirado")
 
         usuario.verificado = True
@@ -433,7 +434,7 @@ class AuthController:
 
         reset_token = create_reset_token(clean_email)
         usuario.codigoverificacion = get_password_hash(reset_token)
-        usuario.codigoexpiracion = datetime.utcnow() + timedelta(minutes=15)
+        usuario.codigoexpiracion = get_bolivia_now() + timedelta(minutes=15)
         db.commit()
 
         print("\n=======================================================")
@@ -464,7 +465,7 @@ class AuthController:
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="El enlace de recuperación ya fue utilizado o es inválido"
                 )
-            if usuario.codigoexpiracion and usuario.codigoexpiracion < datetime.utcnow():
+            if usuario.codigoexpiracion and usuario.codigoexpiracion < get_bolivia_now():
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="El enlace de recuperación ha expirado"
@@ -474,7 +475,7 @@ class AuthController:
             candidatos = db.query(UsuarioModel).filter(
                 UsuarioModel.codigoverificacion.isnot(None),
                 UsuarioModel.codigoexpiracion.isnot(None),
-                UsuarioModel.codigoexpiracion >= datetime.utcnow()
+                UsuarioModel.codigoexpiracion >= get_bolivia_now()
             ).limit(15).all()
 
             usuario = next((u for u in candidatos if verify_password(token, u.codigoverificacion)), None)

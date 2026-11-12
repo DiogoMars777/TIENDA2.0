@@ -53,3 +53,4 @@ def to_bolivia_time(dt_val: Optional[Any]) -> Optional[datetime]:
         return dt_val
 
     return get_bolivia_now()
+

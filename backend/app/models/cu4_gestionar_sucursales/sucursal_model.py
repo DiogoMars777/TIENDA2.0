@@ -7,6 +7,7 @@ from sqlalchemy import Column, Integer, String, Boolean, DateTime, Numeric, Fore
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.core.database import Base
+from app.core.timezone import get_bolivia_now
 
 
 class Sucursal(Base):
@@ -21,7 +22,7 @@ class Sucursal(Base):
     latitud = Column(Numeric(10, 8), nullable=True)
     longitud = Column(Numeric(11, 8), nullable=True)
     activo = Column(Boolean, default=True)
-    fechacreacion = Column(DateTime, default=datetime.utcnow)
+    fechacreacion = Column(DateTime, default=get_bolivia_now)
 
     usuarios = relationship("Usuario", back_populates="sucursal")
 

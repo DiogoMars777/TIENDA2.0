@@ -20,6 +20,7 @@ from app.controllers.cu26_gestionar_bitacora.bitacora_controller import Bitacora
 from app.schemas.cu21_administrar_planes_suscripcion_tenants.suscripcion_tenant_schema import (
     PlanSuscripcionCreate, PlanSuscripcionUpdate, TenantCreate, TenantUpdate
 )
+from app.core.timezone import get_bolivia_now
 
 
 class SuscripcionTenantService:
@@ -65,7 +66,7 @@ class SuscripcionTenantService:
             habilitar_reportes_ia=data.habilitar_reportes_ia,
             habilitar_vestidor_ia=data.habilitar_vestidor_ia,
             activo=data.activo,
-            fechacreacion=datetime.utcnow()
+            fechacreacion=get_bolivia_now()
         )
         db.add(nuevo_plan)
         db.commit()
@@ -189,8 +190,8 @@ class SuscripcionTenantService:
                 suscripcion_actual = TenantSuscripcion(
                     tenant_id=t.id,
                     plan_id=t.plan_id,
-                    fecha_inicio=datetime.utcnow(),
-                    fecha_fin=datetime.utcnow() + timedelta(days=365),
+                    fecha_inicio=get_bolivia_now(),
+                    fecha_fin=get_bolivia_now() + timedelta(days=365),
                     estado="ACTIVA" if t.activo else "SUSPENDIDA",
                     monto_pagado=t.plan.precio_mensual * 12 if t.plan else Decimal("0.00"),
                     metodo_pago="REGISTRO_INICIAL"
@@ -336,7 +337,7 @@ class SuscripcionTenantService:
             logo_url=data.logo_url,
             plan_id=plan.id,
             activo=True,
-            fechacreacion=datetime.utcnow()
+            fechacreacion=get_bolivia_now()
         )
         db.add(nuevo_tenant)
         db.flush()  # Obtener ID generado
@@ -360,8 +361,8 @@ class SuscripcionTenantService:
         suscripcion = TenantSuscripcion(
             tenant_id=nuevo_tenant.id,
             plan_id=plan.id,
-            fecha_inicio=datetime.utcnow(),
-            fecha_fin=datetime.utcnow() + timedelta(days=dias),
+            fecha_inicio=get_bolivia_now(),
+            fecha_fin=get_bolivia_now() + timedelta(days=dias),
             estado="ACTIVA",
             monto_pagado=monto_total,
             metodo_pago="ALTA_INICIAL"
@@ -456,8 +457,8 @@ class SuscripcionTenantService:
         nueva_suscripcion = TenantSuscripcion(
             tenant_id=tenant.id,
             plan_id=nuevo_plan.id,
-            fecha_inicio=datetime.utcnow(),
-            fecha_fin=datetime.utcnow() + timedelta(days=365),
+            fecha_inicio=get_bolivia_now(),
+            fecha_fin=get_bolivia_now() + timedelta(days=365),
             estado="ACTIVA",
             monto_pagado=nuevo_plan.precio_mensual * 12,
             metodo_pago="CAMBIO_PLAN"
@@ -542,7 +543,7 @@ class SuscripcionTenantService:
             .first()
         )
 
-        base_date = datetime.utcnow()
+        base_date = get_bolivia_now()
         if susc_actual and susc_actual.fecha_fin > base_date:
             base_date = susc_actual.fecha_fin
 
@@ -552,7 +553,7 @@ class SuscripcionTenantService:
         nueva_susc = TenantSuscripcion(
             tenant_id=tenant.id,
             plan_id=plan.id,
-            fecha_inicio=datetime.utcnow(),
+            fecha_inicio=get_bolivia_now(),
             fecha_fin=nueva_fecha_fin,
             estado="ACTIVA",
             monto_pagado=monto,

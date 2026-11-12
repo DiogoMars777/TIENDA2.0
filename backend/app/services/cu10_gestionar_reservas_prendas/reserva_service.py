@@ -21,6 +21,7 @@ from app.schemas.reserva_schema import (
     ReservaCreate, ReservaResponse, ReservaDetalleResponse, ReservaSucursalResponse
 )
 from app.controllers.cu26_gestionar_bitacora.bitacora_controller import BitacoraController
+from app.core.timezone import get_bolivia_now, to_bolivia_time
 
 
 def generar_codigo_reserva(db: Session, tenant_id: int = 1) -> str:
@@ -90,9 +91,9 @@ def formatear_reserva(reserva: ReservaModel) -> ReservaResponse:
         total_items += d.cantidad
         total_estimado += subtotal
 
-    # Cálculo dinámico de horas restantes para vencimiento (48 horas)
+    # Cálculo dinámico de horas restantes para vencimiento (48 horas oficiales en hora Bolivia)
     fecha_expiracion = reserva.fechareserva + timedelta(hours=48)
-    tiempo_restante = fecha_expiracion - datetime.utcnow()
+    tiempo_restante = fecha_expiracion - get_bolivia_now()
     horas_restantes = max(0, int(tiempo_restante.total_seconds() // 3600)) if reserva.estado == "PENDIENTE" else 0
 
     return ReservaResponse(
@@ -175,7 +176,7 @@ class ReservaService:
         CU10: Verifica automáticamente las reservas en estado PENDIENTE que superaron las 48 horas.
         Cambia el estado a 'EXPIRADA' y libera el stockreservado en inventario.
         """
-        limite_tiempo = datetime.utcnow() - timedelta(hours=48)
+        limite_tiempo = get_bolivia_now() - timedelta(hours=48)
         reservas_vencidas = db.query(ReservaModel).filter(
             ReservaModel.tenant_id == tenant_id,
             ReservaModel.estado == "PENDIENTE",
@@ -286,8 +287,15 @@ class ReservaService:
             )
 
         # 4. Recolectar prendas y validar existencias físicas antes de apartar
+        es_reserva_offline = (
+            bool(getattr(datos, "es_offline", False)) or
+            bool(getattr(datos, "codigo_reserva", None) and str(datos.codigo_reserva).startswith("RES-OFF-")) or
+            bool(datos.observaciones and "OFFLINE" in datos.observaciones.upper())
+        )
+
         inventarios_afectados: List[Tuple[InventarioSucursalModel, int]] = []
         nombres_prendas: List[str] = []
+        sin_stock_item = None
 
         if datos.items and len(datos.items) > 0:
             for it in datos.items:
@@ -312,24 +320,14 @@ class ReservaService:
                     InventarioSucursalModel.tenant_id == tenant_id
                 ).first()
 
-                if not inv:
-                    inv = InventarioSucursalModel(
-                        varianteid=variante.id,
-                        sucursalid=sucursal_id,
-                        cantidad=10,
-                        stockreservado=0,
-                        tenant_id=tenant_id
-                    )
-                    db.add(inv)
-                    db.flush()
-
+                stock_total = inv.cantidad if (inv and inv.cantidad is not None) else 0
+                stock_res = inv.stockreservado if (inv and inv.stockreservado is not None) else 0
+                disp = max(0, stock_total - stock_res)
                 prod_nombre = variante.producto.nombre if variante.producto else "Prenda"
-                disp = max(0, inv.cantidad - (inv.stockreservado or 0))
-                if it.cantidad > disp:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail=f"Stock insuficiente para apartar '{prod_nombre}'. Disponibles en tienda: {disp} uds."
-                    )
+
+                if it.cantidad > disp or disp <= 0:
+                    sin_stock_item = (prod_nombre, disp, it.cantidad, variante)
+                    break
 
                 nombres_prendas.append(prod_nombre)
                 inventarios_afectados.append((inv, it.cantidad))
@@ -354,29 +352,106 @@ class ReservaService:
                     InventarioSucursalModel.tenant_id == tenant_id
                 ).first()
 
-                if not inv:
-                    inv = InventarioSucursalModel(
-                        varianteid=item.varianteid,
-                        sucursalid=sucursal_id,
-                        cantidad=10,
-                        stockreservado=0,
-                        tenant_id=tenant_id
-                    )
-                    db.add(inv)
-                    db.flush()
+                stock_total = inv.cantidad if (inv and inv.cantidad is not None) else 0
+                stock_res = inv.stockreservado if (inv and inv.stockreservado is not None) else 0
+                disp = max(0, stock_total - stock_res)
 
                 nombre_prenda = (
                     item.variante.producto.nombre if item.variante and item.variante.producto else f"Variante #{item.varianteid}"
                 )
-                disp = max(0, inv.cantidad - (inv.stockreservado or 0))
-                if item.cantidad > disp:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail=f"Stock insuficiente para apartar '{nombre_prenda}'. Disponibles en tienda: {disp} uds."
-                    )
+                if item.cantidad > disp or disp <= 0:
+                    sin_stock_item = (nombre_prenda, disp, item.cantidad, item.variante)
+                    break
 
                 nombres_prendas.append(nombre_prenda)
                 inventarios_afectados.append((inv, item.cantidad))
+
+        # Manejo de conflicto de concurrencia: si NO hay stock disponible
+        if sin_stock_item and es_reserva_offline:
+            prod_nom, disp_uds, cant_pedida, var_obj = sin_stock_item
+            import re
+            codigo = getattr(datos, "codigo_reserva", None)
+            if not codigo and datos.observaciones:
+                m = re.search(r"(RES-OFF-[A-Z0-9]+)", datos.observaciones.upper())
+                if m:
+                    codigo = m.group(1)
+            if not codigo:
+                codigo = generar_codigo_reserva(db, tenant_id)
+
+            fecha_efectiva = to_bolivia_time(getattr(datos, "fecha_reserva", None)) or get_bolivia_now()
+            mensaje_cancelacion = (
+                f"No hay stock disponible para '{prod_nom}'. "
+                f"La última unidad ya fue reservada o adquirida previamente por otro cliente. "
+                f"Su reserva offline #{codigo} ha sido cancelada automáticamente."
+            )
+
+            reserva_cancelada = ReservaModel(
+                tenant_id=tenant_id,
+                codigoreserva=codigo,
+                fechareserva=fecha_efectiva,
+                estado="CANCELADA",
+                observaciones=f"[{datos.observaciones or ''}] [CANCELADA AUTOMÁTICAMENTE: Stock agotado al sincronizar. {mensaje_cancelacion}]".strip(),
+                sucursalid=sucursal_id,
+                clienteid=user.id,
+            )
+            db.add(reserva_cancelada)
+            db.flush()
+
+            # Guardar detalles como constancia histórica
+            if datos.items:
+                for it in datos.items:
+                    v_id = it.variante_id or (var_obj.id if var_obj else None)
+                    if v_id:
+                        db.add(ReservaDetalleModel(
+                            varianteid=v_id,
+                            reservaid=reserva_cancelada.id,
+                            cantidad=it.cantidad or 1
+                        ))
+
+            # Notificación en CU19
+            try:
+                from app.models.cu19_gestionar_notificaciones.notificacion_model import NotificacionModel
+                notif = NotificacionModel(
+                    usuario_id=user.id,
+                    titulo=f"❌ Reserva Cancelada #{codigo} (Sin Stock)",
+                    mensaje=mensaje_cancelacion,
+                    tipo="RESERVA_CANCELADA_STOCK",
+                    enlace="/mis-reservas",
+                    leido=False,
+                    fecha_creacion=get_bolivia_now()
+                )
+                db.add(notif)
+            except Exception:
+                pass
+
+            # Auditoría en Bitácora (CU26)
+            try:
+                BitacoraController.registrar_evento(
+                    db=db,
+                    accion="CANCELAR",
+                    modulo="CU10_GESTIONAR_RESERVAS",
+                    usuario_id=user.id,
+                    detalle=f"Reserva offline #{codigo} cancelada automáticamente por concurrencia: stock agotado para '{prod_nom}'.",
+                    datos_nuevos={"codigo": codigo, "motivo": "STOCK_AGOTADO_CONCURRENCIA", "sucursal_id": sucursal_id},
+                    tenant_id=tenant_id
+                )
+            except Exception:
+                pass
+
+            db.commit()
+            db.refresh(reserva_cancelada)
+
+            resp = formatear_reserva(reserva_cancelada)
+            resp.mensaje = mensaje_cancelacion
+            resp.cancelada_sin_stock = True
+            return resp
+
+        elif sin_stock_item:
+            prod_nom, disp_uds, _, _ = sin_stock_item
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Stock insuficiente para apartar '{prod_nom}'. Disponibles en tienda: {disp_uds} uds."
+            )
 
         if not inventarios_afectados:
             raise HTTPException(
@@ -384,12 +459,17 @@ class ReservaService:
                 detail="No se encontraron prendas válidas para apartar."
             )
 
-        # 5. Generar código único y cabecera de la Reserva
-        codigo = generar_codigo_reserva(db, tenant_id)
+        # 5. Generar código único y cabecera de la Reserva (Hora oficial de Bolivia)
+        codigo = (
+            getattr(datos, "codigo_reserva", None) or
+            generar_codigo_reserva(db, tenant_id)
+        )
+        fecha_efectiva = to_bolivia_time(getattr(datos, "fecha_reserva", None)) or get_bolivia_now()
+
         nueva_reserva = ReservaModel(
             tenant_id=tenant_id,
             codigoreserva=codigo,
-            fechareserva=datetime.utcnow(),
+            fechareserva=fecha_efectiva,
             estado="PENDIENTE",
             observaciones=datos.observaciones,
             sucursalid=sucursal_id,
@@ -431,7 +511,7 @@ class ReservaService:
                 tipo="RESERVA_EXITOSA",
                 enlace="/mis-reservas",
                 leido=False,
-                fecha_creacion=datetime.utcnow()
+                fecha_creacion=get_bolivia_now()
             )
             db.add(notif_res)
         except Exception as err_n:

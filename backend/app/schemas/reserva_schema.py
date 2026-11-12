@@ -45,6 +45,8 @@ class ReservaResponse(BaseModel):
     detalles: List[ReservaDetalleResponse] = []
     total_items: int = 0
     total_estimado: float = 0.0
+    mensaje: Optional[str] = None
+    cancelada_sin_stock: Optional[bool] = False
 
     class Config:
         from_attributes = True
@@ -60,6 +62,9 @@ class ReservaCreate(BaseModel):
     sucursal_id: Optional[int] = None
     observaciones: Optional[str] = None
     items: Optional[List[ReservaItemCreate]] = None
+    codigo_reserva: Optional[str] = None
+    es_offline: Optional[bool] = False
+    fecha_reserva: Optional[datetime] = None
 
 
 class CancelarReservaRequest(BaseModel):

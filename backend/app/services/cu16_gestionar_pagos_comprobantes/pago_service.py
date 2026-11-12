@@ -25,6 +25,7 @@ from app.models.models import (
 )
 from app.models.cu19_gestionar_notificaciones.notificacion_model import NotificacionModel
 from app.controllers.cu26_gestionar_bitacora.bitacora_controller import BitacoraController
+from app.core.timezone import get_bolivia_now
 
 
 def generar_qr_base64(texto: str) -> str:
@@ -129,7 +130,7 @@ class PagoService:
                 detail=f"Método de pago con ID {metodo_id} no válido o inactivo."
             )
 
-        ahora = datetime.utcnow()
+        ahora = get_bolivia_now()
         nombre_lower = (metodo.nombre or "").lower()
 
         # -------------------------------------------------------------
@@ -439,7 +440,7 @@ class PagoService:
         if not venta:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Venta no encontrada.")
 
-        ahora = datetime.utcnow()
+        ahora = get_bolivia_now()
         pago = db.query(PagoModel).filter(PagoModel.ventaid == venta.id).first()
 
         metodo_paypal = db.query(MetodoPagoModel).filter(MetodoPagoModel.nombre.ilike("%paypal%")).first()
@@ -557,7 +558,7 @@ class PagoService:
         total_val = float(venta.total)
 
         # Generar código QR de validación fiscal
-        fecha_str = venta.fecha.strftime('%Y-%m-%d %H:%M') if venta.fecha else datetime.utcnow().strftime('%Y-%m-%d %H:%M')
+        fecha_str = venta.fecha.strftime('%Y-%m-%d %H:%M') if venta.fecha else get_bolivia_now().strftime('%Y-%m-%d %H:%M')
         datos_fiscales = (
             f"EMPRESA:{nombre_empresa}|NIT:1029384756|RECIBO:{venta.codigoventa}|"
             f"TOTAL:{total_val:.2f}|FECHA:{fecha_str}|"

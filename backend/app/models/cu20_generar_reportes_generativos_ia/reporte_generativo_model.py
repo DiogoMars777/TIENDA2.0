@@ -6,6 +6,7 @@
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Boolean
 from datetime import datetime
 from app.core.database import Base
+from app.core.timezone import get_bolivia_now
 
 
 class ReporteGenerativoIA(Base):
@@ -26,7 +27,7 @@ class ReporteGenerativoIA(Base):
     filtros_aplicados = Column(String(255), nullable=True)
     modelo_ia_utilizado = Column(String(100), default="Google Gemini 2.0 Flash")
     es_favorito = Column(Boolean, default=False)
-    fecha_generacion = Column(DateTime, default=datetime.utcnow, index=True)
+    fecha_generacion = Column(DateTime, default=get_bolivia_now, index=True)
 
 
 ReporteGenerativoModel = ReporteGenerativoIA

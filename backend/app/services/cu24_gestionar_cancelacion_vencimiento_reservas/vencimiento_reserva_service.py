@@ -19,6 +19,7 @@ from app.models.cu4_gestionar_sucursales.sucursal_model import SucursalModel
 from app.models.cu1_gestionar_autenticacion.usuario_rol_model import UsuarioModel
 from app.models.cu19_gestionar_notificaciones.notificacion_model import NotificacionModel
 from app.controllers.cu26_gestionar_bitacora.bitacora_controller import BitacoraController
+from app.core.timezone import get_bolivia_now
 
 
 class VencimientoReservaService:
@@ -43,7 +44,7 @@ class VencimientoReservaService:
         """
         Audita y cancela automáticamente todas las reservas pendientes que hayan superado el plazo de tolerancia.
         """
-        ahora = datetime.utcnow()
+        ahora = get_bolivia_now()
         limite_tiempo = ahora - timedelta(hours=horas_limite)
 
         query = db.query(ReservaModel).filter(
@@ -184,7 +185,7 @@ class VencimientoReservaService:
         if not res or res.estado != "PENDIENTE":
             return None
 
-        ahora = datetime.utcnow()
+        ahora = get_bolivia_now()
         res.estado = "CANCELADA"
         res.observaciones = f"{res.observaciones or ''} | Cancelación manual: {motivo}".strip(" |")
 
@@ -255,7 +256,7 @@ class VencimientoReservaService:
         Recupera todas las reservas activas (PENDIENTE) con el cálculo preciso de horas restantes,
         alerta de proximidad (<12h) y prendas asociadas.
         """
-        ahora = datetime.utcnow()
+        ahora = get_bolivia_now()
         query = db.query(
             ReservaModel,
             UsuarioModel.nombre.label("cli_nombre"),
@@ -347,7 +348,7 @@ class VencimientoReservaService:
         """
         Calcula las métricas ejecutivas para el módulo CU24.
         """
-        ahora = datetime.utcnow()
+        ahora = get_bolivia_now()
         limite_riesgo = ahora - timedelta(hours=max(0, horas_politica - 12))
 
         # Total activas

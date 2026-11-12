@@ -22,6 +22,7 @@ from app.models.cu5_gestionar_productos.producto_model import (
 from app.models.cu4_gestionar_sucursales.sucursal_model import SucursalModel
 from app.models.cu13_gestionar_inventario_movimientos.inventario_model import InventarioModel
 from app.models.cu10_gestionar_reservas_prendas.reserva_model import ReservaModel
+from app.core.timezone import get_bolivia_now
 
 genai = None
 GENAI_DISPONIBLE = False
@@ -337,7 +338,7 @@ class ReporteGenerativoService:
             filtros_aplicados=filtros or "General",
             modelo_ia_utilizado=modelo_usado,
             es_favorito=False,
-            fecha_generacion=datetime.utcnow()
+            fecha_generacion=get_bolivia_now()
         )
         db.add(nuevo_reporte)
         db.commit()

@@ -21,6 +21,7 @@ from app.models.cu1_gestionar_autenticacion.usuario_rol_model import UsuarioMode
 from app.models.saas_tenant.tenant_model import TenantModel, PlanSuscripcionModel, TenantConfiguracionModel
 from app.models.cu25_gestionar_cambios_devoluciones.devolucion_model import DevolucionModel
 from app.models.cu23_sincronizar_operaciones_offline.sincronizacion_offline_model import OperacionOfflineSyncModel
+from app.core.timezone import get_bolivia_now
 
 
 class DashboardService:
@@ -32,7 +33,7 @@ class DashboardService:
     @staticmethod
     def _calcular_rango_fechas(dias: Optional[int]) -> Optional[datetime]:
         if dias and dias > 0:
-            return datetime.utcnow() - timedelta(days=dias)
+            return get_bolivia_now() - timedelta(days=dias)
         return None
 
     @classmethod
@@ -111,7 +112,7 @@ class DashboardService:
             "total_devoluciones": total_devoluciones,
             "monto_devoluciones_bs": round(monto_devoluciones, 2),
             "operaciones_offline_sincronizadas": operaciones_offline,
-            "fecha_calculo": datetime.utcnow().strftime("%d/%m/%Y %H:%M:%S")
+            "fecha_calculo": get_bolivia_now().strftime("%d/%m/%Y %H:%M:%S")
         }
 
     @classmethod

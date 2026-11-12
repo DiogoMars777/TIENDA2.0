@@ -28,6 +28,7 @@ from app.services.cu10_gestionar_reservas_prendas.reserva_service import (
 from app.controllers.cu26_gestionar_bitacora.bitacora_controller import (
     BitacoraController,
 )
+from app.core.timezone import get_bolivia_now
 
 
 class AtenderReservaService:
@@ -201,7 +202,7 @@ class AtenderReservaService:
                         referencia=reserva.codigoreserva,
                         inventarioid=inv.id,
                         usuarioid=usuario_staff_id or 1,
-                        fecha=datetime.utcnow(),
+                        fecha=get_bolivia_now(),
                     )
                     db.add(mov)
 

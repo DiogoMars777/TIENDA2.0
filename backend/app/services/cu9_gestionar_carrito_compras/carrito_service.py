@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, joinedload
 from decimal import Decimal
 from datetime import datetime
 from fastapi import HTTPException, status
+from app.core.timezone import get_bolivia_now
 
 from app.models.models import (
     CarritoModel, CarritoItemModel, VarianteProductoModel, ProductoModel,
@@ -89,8 +90,8 @@ class CarritoService:
                 clienteid=user.id,
                 tenant_id=tenant_id,
                 estado="ACTIVO",
-                fechacreacion=datetime.utcnow(),
-                fechaactualizacion=datetime.utcnow()
+                fechacreacion=get_bolivia_now(),
+                fechaactualizacion=get_bolivia_now()
             )
             db.add(carrito)
             db.commit()
@@ -256,11 +257,11 @@ class CarritoService:
                 varianteid=datos.variante_id,
                 cantidad=datos.cantidad,
                 preciounitario=variante.precioventa or variante.producto.preciobase,
-                fechaagregado=datetime.utcnow()
+                fechaagregado=get_bolivia_now()
             )
             db.add(nuevo_item)
 
-        carrito.fechaactualizacion = datetime.utcnow()
+        carrito.fechaactualizacion = get_bolivia_now()
         db.commit()
 
         return cls.obtener_carrito(db, usuario_id, tenant_id)
@@ -314,7 +315,7 @@ class CarritoService:
 
             item.cantidad = datos.cantidad
 
-        carrito.fechaactualizacion = datetime.utcnow()
+        carrito.fechaactualizacion = get_bolivia_now()
         db.commit()
 
         return cls.obtener_carrito(db, usuario_id, tenant_id)
@@ -337,7 +338,7 @@ class CarritoService:
 
         if item:
             db.delete(item)
-            carrito.fechaactualizacion = datetime.utcnow()
+            carrito.fechaactualizacion = get_bolivia_now()
             db.commit()
 
         return cls.obtener_carrito(db, usuario_id, tenant_id)
@@ -365,7 +366,7 @@ class CarritoService:
 
         carrito = cls._obtener_carrito_activo(db, usuario_id, tenant_id)
         carrito.sucursalid = datos.sucursal_id
-        carrito.fechaactualizacion = datetime.utcnow()
+        carrito.fechaactualizacion = get_bolivia_now()
         db.commit()
 
         return cls.obtener_carrito(db, usuario_id, tenant_id)
@@ -384,7 +385,7 @@ class CarritoService:
             CarritoItemModel.carritoid == carrito.id
         ).delete()
 
-        carrito.fechaactualizacion = datetime.utcnow()
+        carrito.fechaactualizacion = get_bolivia_now()
         db.commit()
 
         return cls.obtener_carrito(db, usuario_id, tenant_id)

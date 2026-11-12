@@ -20,6 +20,7 @@ class ReservationController extends ChangeNotifier {
   bool _cargando = false;
   bool _sincronizando = false;
   String? _error;
+  String? _alertaCancelacionStock;
   int _tenantActivoId = 1;
   Timer? _autoSyncTimer;
 
@@ -27,6 +28,12 @@ class ReservationController extends ChangeNotifier {
   bool get cargando => _cargando;
   bool get sincronizando => _sincronizando;
   String? get error => _error;
+  String? get alertaCancelacionStock => _alertaCancelacionStock;
+
+  void limpiarAlertaStock() {
+    _alertaCancelacionStock = null;
+    notifyListeners();
+  }
 
   int get pendientesOfflineCount => _reservas.where((r) => r.esOffline).length;
 
@@ -278,14 +285,36 @@ class ReservationController extends ChangeNotifier {
           headers: headers,
           body: json.encode({
             if (resOff.sucursalId != null) 'sucursal_id': resOff.sucursalId,
-            'observaciones': '[SINCRONIZADA DESDE MÓVIL OFFLINE ${resOff.codigoReserva}]',
+            'codigo_reserva': resOff.codigoReserva,
+            'es_offline': true,
+            'fecha_reserva': resOff.fechaReserva,
+            'observaciones': resOff.observaciones ?? '[SINCRONIZADA DESDE MÓVIL OFFLINE ${resOff.codigoReserva}]',
             'items': payloadItems,
           }),
         ).timeout(const Duration(seconds: 6));
 
         if (resp.statusCode == 201 || resp.statusCode == 200) {
           sincronizadas++;
+          try {
+            final Map<String, dynamic> data = json.decode(utf8.decode(resp.bodyBytes));
+            final bool canceladaSinStock = (data['cancelada_sin_stock'] == true) || (data['estado'] == 'CANCELADA');
+            if (canceladaSinStock) {
+              _alertaCancelacionStock = data['mensaje'] ??
+                  'No hay stock disponible para ${resOff.codigoReserva}. La última unidad ya fue adquirida o reservada previamente por otro cliente.';
+              _error = _alertaCancelacionStock;
+            }
+          } catch (_) {}
         } else {
+          try {
+            final Map<String, dynamic> errData = json.decode(utf8.decode(resp.bodyBytes));
+            final String detail = errData['detail']?.toString() ?? '';
+            if (detail.toLowerCase().contains('stock') || detail.toLowerCase().contains('insuficiente')) {
+              _alertaCancelacionStock = 'Reserva ${resOff.codigoReserva} cancelada: $detail';
+              _error = _alertaCancelacionStock;
+              // Stock en 0: no volver a meter a la cola para evitar bucles infinitos
+              continue;
+            }
+          } catch (_) {}
           restantes.add(resOff);
         }
       } catch (_) {
@@ -327,40 +356,7 @@ class ReservationController extends ChangeNotifier {
     try {
       // 2. Si hay reservas offline pendientes y ya hay internet, sincronizarlas primero
       if (offlineList.isNotEmpty) {
-        final restantes = <ReservaModel>[];
-        for (final resOff in offlineList) {
-          try {
-            final headers = <String, String>{
-              'Content-Type': 'application/json',
-              'X-Tenant-ID': '${resOff.tenantId ?? targetTenant}',
-            };
-            if (token != null && token.isNotEmpty) {
-              headers['Authorization'] = 'Bearer $token';
-            }
-            final payloadItems = resOff.detalles.map((d) => {
-              if (d.productoId != null) 'producto_id': d.productoId,
-              if (d.varianteId > 0) 'variante_id': d.varianteId,
-              'cantidad': d.cantidad,
-            }).toList();
-
-            final syncResp = await http.post(
-              Uri.parse(_reservasUrl),
-              headers: headers,
-              body: json.encode({
-                if (resOff.sucursalId != null) 'sucursal_id': resOff.sucursalId,
-                'observaciones': '[SINCRONIZADA DESDE MÓVIL OFFLINE ${resOff.codigoReserva}]',
-                'items': payloadItems,
-              }),
-            ).timeout(const Duration(seconds: 5));
-
-            if (syncResp.statusCode != 201 && syncResp.statusCode != 200) {
-              restantes.add(resOff);
-            }
-          } catch (_) {
-            restantes.add(resOff);
-          }
-        }
-        await _guardarReservasOffline(targetTenant, restantes);
+        await sincronizarReservasOffline(tenantId: targetTenant, token: token, silencioso: true);
       }
 
       // 3. Consultar las reservas reales del servidor

@@ -7,6 +7,7 @@ from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime, T
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.core.database import Base
+from app.core.timezone import get_bolivia_now
 
 
 class Rol(Base):
@@ -36,7 +37,7 @@ class Usuario(Base):
     verificado = Column(Boolean, default=False)
     codigoverificacion = Column(String(255), nullable=True)
     codigoexpiracion = Column(DateTime, nullable=True)
-    fechacreacion = Column(DateTime, default=datetime.utcnow)
+    fechacreacion = Column(DateTime, default=get_bolivia_now)
 
     rol = relationship("Rol", back_populates="usuarios")
     sucursal = relationship("Sucursal", back_populates="usuarios")

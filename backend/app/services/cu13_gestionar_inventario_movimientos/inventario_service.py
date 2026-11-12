@@ -11,6 +11,7 @@ from typing import List, Optional, Dict
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from fastapi import HTTPException, status
+from app.core.timezone import get_bolivia_now
 
 from app.models.models import (
     UsuarioModel,
@@ -130,7 +131,7 @@ class InventarioService:
                         stockfisico=20,  # Stock inicial de cortesía para pruebas y tienda
                         stockreservado=0,
                         stockminimo=5,
-                        fechaactualizacion=datetime.utcnow(),
+                        fechaactualizacion=get_bolivia_now(),
                     )
                     db.add(inv)
                     hubo_cambios = True
@@ -386,7 +387,7 @@ class InventarioService:
                 detail="Tipo de movimiento inválido. Use 'Entrada', 'Salida' o 'Ajuste'.",
             )
 
-        inv.fechaactualizacion = datetime.utcnow()
+        inv.fechaactualizacion = get_bolivia_now()
 
         movimiento = MovimientoInventarioModel(
             tenant_id=tenant_id,
@@ -394,7 +395,7 @@ class InventarioService:
             cantidad=cant,
             motivo=data.motivo or f"Operación manual de {tipo}",
             referencia=data.referencia,
-            fecha=datetime.utcnow(),
+            fecha=get_bolivia_now(),
             inventarioid=inv.id,
             usuarioid=usuario_id,
         )
@@ -493,7 +494,7 @@ class InventarioService:
 
         # 1. Descontar del origen
         inv_origen.stockfisico -= data.cantidad
-        inv_origen.fechaactualizacion = datetime.utcnow()
+        inv_origen.fechaactualizacion = get_bolivia_now()
 
         # 2. Localizar o crear registro en destino
         inv_destino = (
@@ -514,15 +515,15 @@ class InventarioService:
                 stockfisico=data.cantidad,
                 stockreservado=0,
                 stockminimo=inv_origen.stockminimo,
-                fechaactualizacion=datetime.utcnow(),
+                fechaactualizacion=get_bolivia_now(),
             )
             db.add(inv_destino)
             db.flush()
         else:
             inv_destino.stockfisico += data.cantidad
-            inv_destino.fechaactualizacion = datetime.utcnow()
+            inv_destino.fechaactualizacion = get_bolivia_now()
 
-        referencia = data.referencia or f"TRF-{inv_origen.sucursalid}->{data.sucursal_destino_id}-{datetime.utcnow().strftime('%Y%m%d%H%M')}"
+        referencia = data.referencia or f"TRF-{inv_origen.sucursalid}->{data.sucursal_destino_id}-{get_bolivia_now().strftime('%Y%m%d%H%M')}"
         motivo_texto = data.motivo or "Reabastecimiento y balance de inventario entre sucursales"
 
         # 3. Kardex de salida en origen
@@ -532,7 +533,7 @@ class InventarioService:
             cantidad=data.cantidad,
             motivo=f"Hacia {suc_destino.nombre}: {motivo_texto}",
             referencia=referencia,
-            fecha=datetime.utcnow(),
+            fecha=get_bolivia_now(),
             inventarioid=inv_origen.id,
             usuarioid=usuario_id,
         )
@@ -545,7 +546,7 @@ class InventarioService:
             cantidad=data.cantidad,
             motivo=f"Desde {suc_origen_nombre}: {motivo_texto}",
             referencia=referencia,
-            fecha=datetime.utcnow(),
+            fecha=get_bolivia_now(),
             inventarioid=inv_destino.id,
             usuarioid=usuario_id,
         )
@@ -609,7 +610,7 @@ class InventarioService:
 
         anterior = inv.stockminimo
         inv.stockminimo = data.stockminimo
-        inv.fechaactualizacion = datetime.utcnow()
+        inv.fechaactualizacion = get_bolivia_now()
         db.commit()
         db.refresh(inv)
 
