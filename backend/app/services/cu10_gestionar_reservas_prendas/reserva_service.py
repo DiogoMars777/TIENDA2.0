@@ -543,17 +543,25 @@ class ReservaService:
         cls,
         db: Session,
         usuario_id: int,
-        tenant_id: int = 1
+        tenant_id: int = 1,
+        codigos_dispositivo: Optional[List[str]] = None
     ) -> List[ReservaResponse]:
         """Obtiene todas las reservas del usuario en el tenant con verificación de expiración automática"""
         cls.verificar_y_expirar_reservas(db, tenant_id)
         user = cls._obtener_usuario_reserva(db, usuario_id, tenant_id)
 
-        reservas = db.query(ReservaModel).filter(
-            ReservaModel.clienteid == user.id,
-            ReservaModel.tenant_id == tenant_id
-        ).order_by(ReservaModel.fechareserva.desc()).all()
+        from sqlalchemy import or_
+        filtros = []
+        if user and user.id:
+            filtros.append(ReservaModel.clienteid == user.id)
+        if codigos_dispositivo and len(codigos_dispositivo) > 0:
+            filtros.append(ReservaModel.codigoreserva.in_(codigos_dispositivo))
 
+        query = db.query(ReservaModel).filter(ReservaModel.tenant_id == tenant_id)
+        if filtros:
+            query = query.filter(or_(*filtros))
+
+        reservas = query.order_by(ReservaModel.fechareserva.desc()).all()
         return [formatear_reserva(r) for r in reservas]
 
     @classmethod

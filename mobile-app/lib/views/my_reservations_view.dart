@@ -320,16 +320,27 @@ class _MyReservationsViewState extends State<MyReservationsView> {
                 modoOfflineSimulado: prodCtrl.modoOfflineSimulado,
               );
               if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      syncCount > 0
-                          ? '¡$syncCount reserva(s) offline sincronizadas con el servidor!'
-                          : 'Listado de reservas actualizado.',
+                if (resCtrl.alertaCancelacionStock != null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(resCtrl.alertaCancelacionStock!),
+                      backgroundColor: Colors.red.shade800,
+                      duration: const Duration(seconds: 6),
                     ),
-                    backgroundColor: Colors.teal,
-                  ),
-                );
+                  );
+                  resCtrl.limpiarAlertaStock();
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        syncCount > 0
+                            ? '¡$syncCount reserva(s) offline sincronizadas con el servidor!'
+                            : 'Listado de reservas actualizado.',
+                      ),
+                      backgroundColor: Colors.teal,
+                    ),
+                  );
+                }
               }
             },
           ),
@@ -451,9 +462,13 @@ class _MyReservationsViewState extends State<MyReservationsView> {
                     itemCount: controller.reservas.length,
                     itemBuilder: (context, index) {
                       final reserva = controller.reservas[index];
+                      final bool esSyncExitosa = !reserva.esOffline && reserva.estado == 'PENDIENTE';
                       final statusColor = reserva.esOffline
                           ? Colors.amber
-                          : _getStatusColor(reserva.estado);
+                          : (esSyncExitosa ? const Color(0xFF10B981) : _getStatusColor(reserva.estado));
+                      final statusTexto = reserva.esOffline
+                          ? 'OFFLINE (PENDIENTE SYNC)'
+                          : (esSyncExitosa ? 'SINCRONIZADO' : reserva.estado);
 
                       return Container(
                         margin: const EdgeInsets.only(bottom: 16),
@@ -505,7 +520,7 @@ class _MyReservationsViewState extends State<MyReservationsView> {
                                       border: Border.all(color: statusColor.withAlpha(102)),
                                     ),
                                     child: Text(
-                                      reserva.esOffline ? 'OFFLINE (PENDIENTE SYNC)' : reserva.estado,
+                                      statusTexto,
                                       style: TextStyle(
                                         color: statusColor,
                                         fontWeight: FontWeight.bold,
@@ -582,6 +597,31 @@ class _MyReservationsViewState extends State<MyReservationsView> {
                           ),
                         ],
 
+                        if (!reserva.esOffline && reserva.estado == 'PENDIENTE') ...[
+                          const SizedBox(height: 8),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF10B981).withAlpha(30),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: const Color(0xFF10B981).withAlpha(100)),
+                            ),
+                            child: const Row(
+                              children: [
+                                Icon(Icons.check_circle_outline, color: Color(0xFF10B981), size: 16),
+                                SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'SINCRONIZADO CON ÉXITO • Stock apartado en tienda física. Presenta tu código en sucursal al retirar.',
+                                    style: TextStyle(color: Color(0xFF10B981), fontSize: 11, fontWeight: FontWeight.w600),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+
                         if (reserva.estado == 'CANCELADA') ...[
                           const SizedBox(height: 8),
                           Container(
@@ -598,9 +638,15 @@ class _MyReservationsViewState extends State<MyReservationsView> {
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
-                                    reserva.observaciones != null && (reserva.observaciones!.contains('Stock') || reserva.observaciones!.contains('AUTOMÁTICAMENTE'))
-                                        ? 'CANCELADA AUTOMÁTICAMENTE: Stock agotado al sincronizar. La última unidad ya fue adquirida por otro cliente.'
-                                        : 'RESERVA CANCELADA',
+                                    reserva.observaciones != null &&
+                                            (reserva.observaciones!.contains('Stock') ||
+                                                reserva.observaciones!.contains('AUTOMÁTICAMENTE') ||
+                                                reserva.observaciones!.contains('agotado') ||
+                                                reserva.observaciones!.contains('insuficiente') ||
+                                                reserva.observaciones!.contains('cancelada') ||
+                                                reserva.observaciones!.contains('Cancelado'))
+                                        ? reserva.observaciones!
+                                        : 'CANCELADA AUTOMÁTICAMENTE: Stock agotado al sincronizar. La última unidad ya fue adquirida por otro cliente.',
                                     style: const TextStyle(color: Colors.redAccent, fontSize: 11, fontWeight: FontWeight.w600),
                                   ),
                                 ),

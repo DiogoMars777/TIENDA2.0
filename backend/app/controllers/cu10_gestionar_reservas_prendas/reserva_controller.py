@@ -42,13 +42,15 @@ class ReservaController:
     def listar_reservas_usuario(
         db: Session,
         usuario_id: int,
-        tenant_id: int = 1
+        tenant_id: int = 1,
+        codigos_dispositivo: Optional[List[str]] = None
     ) -> List[ReservaResponse]:
         """Obtiene las reservas del usuario en el tenant ordenadas cronológicamente"""
         return ReservaService.listar_reservas_usuario(
             db=db,
             usuario_id=usuario_id,
-            tenant_id=tenant_id
+            tenant_id=tenant_id,
+            codigos_dispositivo=codigos_dispositivo
         )
 
     @staticmethod

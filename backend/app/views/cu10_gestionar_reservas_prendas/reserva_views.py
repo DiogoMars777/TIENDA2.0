@@ -101,18 +101,22 @@ def crear_reserva(
 
 @router.get("/mis-reservas", response_model=List[ReservaResponse], summary="Listar reservas del cliente autenticado")
 def listar_mis_reservas(
+    codigos: Optional[str] = None,
     x_tenant_id: Optional[int] = Header(None, alias="X-Tenant-ID"),
     db: Session = Depends(get_db),
     usuario_id: int = Depends(get_current_user_id),
 ):
     """
     CU10: Retorna el historial y estado de todas las reservas efectuadas por el cliente en el tenant, con cálculo de expiración.
+    Permite opcionalmente recibir codigos creados localmente en el móvil para asegurar su trazabilidad omnicanal.
     """
     tenant_id = x_tenant_id or 1
+    codigos_lista = [c.strip() for c in codigos.split(",") if c.strip()] if codigos else None
     return ReservaController.listar_reservas_usuario(
         db=db,
         usuario_id=usuario_id,
-        tenant_id=tenant_id
+        tenant_id=tenant_id,
+        codigos_dispositivo=codigos_lista
     )
 
 

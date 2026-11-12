@@ -35,6 +35,7 @@ class ReservationController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Solo cuenta las que están estrictamente pendientes en la cola local sin internet
   int get pendientesOfflineCount => _reservas.where((r) => r.esOffline).length;
 
   ReservationController() {
@@ -63,6 +64,183 @@ class ReservationController extends ChangeNotifier {
     return 'RES-OFF-$sufijo';
   }
 
+  // ============================================================================
+  // PERSISTENCIA LOCAL (OFFLINE FIRST & HISTORIAL PERMANENTE DEL DISPOSITIVO)
+  // ============================================================================
+
+  /// Cola de reservas offline creadas en este móvil que están esperando sincronización con el servidor
+  Future<List<ReservaModel>> _leerReservasOffline(int tenantId) async {
+    try {
+      final raw = await LocalStorageService.readJson('reservas_offline_tenant_$tenantId');
+      if (raw is List) {
+        return raw.map((j) => ReservaModel.fromJson(Map<String, dynamic>.from(j))).toList();
+      }
+    } catch (e) {
+      debugPrint('Error leyendo cola de reservas offline: $e');
+    }
+    return [];
+  }
+
+  Future<void> _guardarReservasOffline(int tenantId, List<ReservaModel> lista) async {
+    await LocalStorageService.saveJson(
+      'reservas_offline_tenant_$tenantId',
+      lista.map((r) => r.toJson()).toList(),
+    );
+  }
+
+  /// Historial persistente local de todas las reservas originadas o consultadas en este móvil.
+  /// Garantiza que ninguna reserva (cancelada, entregada o pendiente) desaparezca jamás del dispositivo.
+  Future<List<ReservaModel>> _leerHistorialDispositivo(int tenantId) async {
+    try {
+      final raw = await LocalStorageService.readJson('reservas_historial_dispositivo_$tenantId');
+      if (raw is List && raw.isNotEmpty) {
+        return raw.map((j) => ReservaModel.fromJson(Map<String, dynamic>.from(j))).toList();
+      }
+
+      // Migración o auto-población inicial con lo que ya existía en caché y offline
+      final offline = await _leerReservasOffline(tenantId);
+      final cache = await _leerCacheOnline(tenantId);
+      final unificadas = <String, ReservaModel>{};
+      for (final r in [...offline, ...cache]) {
+        unificadas[r.codigoReserva] = r;
+      }
+      final inicial = unificadas.values.toList();
+      if (inicial.isNotEmpty) {
+        await _guardarHistorialDispositivo(tenantId, inicial);
+      }
+      return inicial;
+    } catch (e) {
+      debugPrint('Error leyendo historial de reservas del dispositivo: $e');
+      return [];
+    }
+  }
+
+  Future<void> _guardarHistorialDispositivo(int tenantId, List<ReservaModel> lista) async {
+    try {
+      await LocalStorageService.saveJson(
+        'reservas_historial_dispositivo_$tenantId',
+        lista.map((r) => r.toJson()).toList(),
+      );
+    } catch (e) {
+      debugPrint('Error guardando historial de reservas del dispositivo: $e');
+    }
+  }
+
+  Future<void> _guardarEnHistorialDispositivo(int tenantId, ReservaModel res) async {
+    try {
+      final hist = await _leerHistorialDispositivo(tenantId);
+      final idx = hist.indexWhere((r) => r.codigoReserva == res.codigoReserva);
+      if (idx != -1) {
+        hist[idx] = res;
+      } else {
+        hist.insert(0, res);
+      }
+      await _guardarHistorialDispositivo(tenantId, hist);
+    } catch (e) {
+      debugPrint('Error guardando en historial de dispositivo: $e');
+    }
+  }
+
+  Future<List<ReservaModel>> _leerCacheOnline(int tenantId) async {
+    try {
+      final raw = await LocalStorageService.readJson('reservas_cache_tenant_$tenantId');
+      if (raw is List) {
+        return raw.map((j) => ReservaModel.fromJson(Map<String, dynamic>.from(j))).toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  Future<void> _guardarCacheOnline(int tenantId) async {
+    try {
+      final onlineOnly = _reservas.where((r) => !r.esOffline).toList();
+      await LocalStorageService.saveJson(
+        'reservas_cache_tenant_$tenantId',
+        onlineOnly.map((r) => r.toJson()).toList(),
+      );
+    } catch (_) {}
+  }
+
+  /// Inserta una notificación en la base local del móvil para alertar al usuario (CU19)
+  Future<void> _agregarNotificacionLocal({
+    required int tenantId,
+    required String titulo,
+    required String mensaje,
+    required String tipo,
+    String? enlace,
+  }) async {
+    try {
+      final raw = await LocalStorageService.readJson('notificaciones_locales_tenant_$tenantId');
+      final List<Map<String, dynamic>> notifs = (raw is List)
+          ? raw.map((e) => Map<String, dynamic>.from(e as Map)).toList()
+          : [];
+
+      final ahora = DateTime.now();
+      final fechaFormateada =
+          '${ahora.day.toString().padLeft(2, '0')}/${ahora.month.toString().padLeft(2, '0')}/${ahora.year} ${ahora.hour.toString().padLeft(2, '0')}:${ahora.minute.toString().padLeft(2, '0')}';
+
+      final nueva = {
+        'id': ahora.millisecondsSinceEpoch,
+        'titulo': titulo,
+        'mensaje': mensaje,
+        'tipo': tipo,
+        'leido': false,
+        'enlace': enlace ?? '/mis-reservas',
+        'fecha': fechaFormateada,
+        'tenant_id': tenantId,
+      };
+
+      notifs.removeWhere((n) => n['titulo'] == titulo);
+      notifs.insert(0, nueva);
+
+      await LocalStorageService.saveJson('notificaciones_locales_tenant_$tenantId', notifs);
+    } catch (e) {
+      debugPrint('Error guardando notificación local de reserva: $e');
+    }
+  }
+
+  /// Fusiona inteligentemente:
+  /// - Servidor (online)
+  /// - Historial permanente del móvil
+  /// - Cola pendiente offline (SOLO las que están aquí llevan esOffline = true)
+  List<ReservaModel> _combinarReservas({
+    required List<ReservaModel> pendientesOffline,
+    required List<ReservaModel> historialDispositivo,
+    required List<ReservaModel> onlineReservas,
+  }) {
+    final Map<String, ReservaModel> mapa = {};
+
+    // 1. Añadir reservas del servidor (siempre esOffline: false)
+    for (final r in onlineReservas) {
+      mapa[r.codigoReserva] = r.copyWith(esOffline: false);
+    }
+
+    // 2. Fusionar con el historial permanente del teléfono
+    for (final r in historialDispositivo) {
+      if (!mapa.containsKey(r.codigoReserva)) {
+        mapa[r.codigoReserva] = r.copyWith(esOffline: false);
+      } else {
+        final server = mapa[r.codigoReserva]!;
+        // El servidor manda sobre el estado final (PAGADA, ENTREGADA, CANCELADA)
+        mapa[r.codigoReserva] = server.copyWith(esOffline: false);
+      }
+    }
+
+    // 3. Superponer ÚNICAMENTE las que siguen pendientes en la cola offline sin internet
+    for (final r in pendientesOffline) {
+      mapa[r.codigoReserva] = r.copyWith(esOffline: true);
+    }
+
+    final lista = mapa.values.toList();
+    // Ordenar de más reciente a más antigua
+    lista.sort((a, b) => b.id.compareTo(a.id));
+    return lista;
+  }
+
+  // ============================================================================
+  // OPERACIONES PRINCIPALES DE RESERVA (CU10 / CU23)
+  // ============================================================================
+
   /// CU10: Convierte el carrito activo en una reserva física (Online o Guardada en Base Local Offline)
   Future<ReservaModel?> crearReserva({
     int? sucursalId,
@@ -81,7 +259,7 @@ class ReservationController extends ChangeNotifier {
     _tenantActivoId = targetTenant;
     notifyListeners();
 
-    // Si NO está forzado el modo offline, intentamos crearla en el servidor primero
+    // 1. Si NO está forzado el modo offline, intentamos crearla en el servidor primero
     if (!forzarOffline) {
       try {
         final headers = <String, String>{
@@ -110,7 +288,8 @@ class ReservationController extends ChangeNotifier {
 
         if (response.statusCode == 201 || response.statusCode == 200) {
           final data = json.decode(utf8.decode(response.bodyBytes));
-          final nuevaReserva = ReservaModel.fromJson(data);
+          final nuevaReserva = ReservaModel.fromJson(data).copyWith(esOffline: false);
+          await _guardarEnHistorialDispositivo(targetTenant, nuevaReserva);
           _reservas.insert(0, nuevaReserva);
           await _guardarCacheOnline(targetTenant);
           _cargando = false;
@@ -122,7 +301,7 @@ class ReservationController extends ChangeNotifier {
       }
     }
 
-    // MODO OFFLINE: Guardar la reserva en la base de datos local del móvil
+    // 2. MODO OFFLINE: Guardar la reserva en la base de datos local del móvil
     try {
       final codigoOff = _generarCodigoOffline();
       final ahora = DateTime.now().toIso8601String();
@@ -171,9 +350,13 @@ class ReservationController extends ChangeNotifier {
         totalEstimado: totalBs,
       );
 
+      // Guardar en cola pendiente offline
       final pendientes = await _leerReservasOffline(targetTenant);
       pendientes.insert(0, reservaLocal);
       await _guardarReservasOffline(targetTenant, pendientes);
+
+      // Guardar en historial permanente del dispositivo
+      await _guardarEnHistorialDispositivo(targetTenant, reservaLocal);
 
       _reservas.insert(0, reservaLocal);
       _error = null;
@@ -213,38 +396,7 @@ class ReservationController extends ChangeNotifier {
     );
   }
 
-  Future<List<ReservaModel>> _leerReservasOffline(int tenantId) async {
-    final raw = await LocalStorageService.readJson('reservas_offline_tenant_$tenantId');
-    if (raw is List) {
-      return raw.map((j) => ReservaModel.fromJson(Map<String, dynamic>.from(j))).toList();
-    }
-    return [];
-  }
-
-  Future<void> _guardarReservasOffline(int tenantId, List<ReservaModel> lista) async {
-    await LocalStorageService.saveJson(
-      'reservas_offline_tenant_$tenantId',
-      lista.map((r) => r.toJson()).toList(),
-    );
-  }
-
-  Future<List<ReservaModel>> _leerCacheOnline(int tenantId) async {
-    final raw = await LocalStorageService.readJson('reservas_cache_tenant_$tenantId');
-    if (raw is List) {
-      return raw.map((j) => ReservaModel.fromJson(Map<String, dynamic>.from(j))).toList();
-    }
-    return [];
-  }
-
-  Future<void> _guardarCacheOnline(int tenantId) async {
-    final onlineOnly = _reservas.where((r) => !r.esOffline).toList();
-    await LocalStorageService.saveJson(
-      'reservas_cache_tenant_$tenantId',
-      onlineOnly.map((r) => r.toJson()).toList(),
-    );
-  }
-
-  /// Sincroniza automáticamente las reservas creadas sin internet cuando vuelve la conexión
+  /// CU23: Sincroniza automáticamente las reservas creadas sin internet cuando vuelve la conexión
   Future<int> sincronizarReservasOffline({
     int? tenantId,
     String? token,
@@ -254,15 +406,14 @@ class ReservationController extends ChangeNotifier {
     final pendientes = await _leerReservasOffline(targetTenant);
     if (pendientes.isEmpty) return 0;
 
+    _sincronizando = true;
     if (!silencioso) {
-      _sincronizando = true;
       notifyListeners();
-    } else {
-      _sincronizando = true;
     }
 
     int sincronizadas = 0;
     final restantes = <ReservaModel>[];
+    final historial = await _leerHistorialDispositivo(targetTenant);
 
     for (final resOff in pendientes) {
       try {
@@ -291,60 +442,125 @@ class ReservationController extends ChangeNotifier {
             'observaciones': resOff.observaciones ?? '[SINCRONIZADA DESDE MÓVIL OFFLINE ${resOff.codigoReserva}]',
             'items': payloadItems,
           }),
-        ).timeout(const Duration(seconds: 6));
+        ).timeout(const Duration(seconds: 7));
 
         if (resp.statusCode == 201 || resp.statusCode == 200) {
           sincronizadas++;
-          try {
-            final Map<String, dynamic> data = json.decode(utf8.decode(resp.bodyBytes));
-            final bool canceladaSinStock = (data['cancelada_sin_stock'] == true) || (data['estado'] == 'CANCELADA');
-            if (canceladaSinStock) {
-              _alertaCancelacionStock = data['mensaje'] ??
-                  'No hay stock disponible para ${resOff.codigoReserva}. La última unidad ya fue adquirida o reservada previamente por otro cliente.';
-              _error = _alertaCancelacionStock;
-            }
-          } catch (_) {}
+          final Map<String, dynamic> data = json.decode(utf8.decode(resp.bodyBytes));
+          final bool canceladaSinStock = (data['cancelada_sin_stock'] == true) || (data['estado'] == 'CANCELADA');
+          final String nuevoEstado = canceladaSinStock ? 'CANCELADA' : (data['estado'] ?? 'PENDIENTE');
+          final int nuevoId = (data['id'] is num) ? (data['id'] as num).toInt() : resOff.id;
+          final String nuevoObs = data['observaciones'] ??
+              (canceladaSinStock
+                  ? 'CANCELADA AUTOMÁTICAMENTE: Stock agotado al sincronizar. La última unidad ya fue adquirida por otro cliente.'
+                  : resOff.observaciones);
+
+          // Actualizar en el historial del móvil con estado sincronizado y esOffline en false
+          final syncedReserva = resOff.copyWith(
+            id: nuevoId,
+            esOffline: false,
+            estado: nuevoEstado,
+            observaciones: nuevoObs,
+          );
+
+          final idxHist = historial.indexWhere((r) => r.codigoReserva == resOff.codigoReserva);
+          if (idxHist != -1) {
+            historial[idxHist] = syncedReserva;
+          } else {
+            historial.insert(0, syncedReserva);
+          }
+
+          if (canceladaSinStock) {
+            _alertaCancelacionStock = data['mensaje'] ??
+                'Reserva ${resOff.codigoReserva} cancelada: Stock agotado. La última unidad ya fue adquirida por otro cliente.';
+            _error = _alertaCancelacionStock;
+            await _agregarNotificacionLocal(
+              tenantId: resOff.tenantId ?? targetTenant,
+              titulo: '❌ Reserva #${resOff.codigoReserva} Cancelada por Stock',
+              mensaje: 'Tu reserva #${resOff.codigoReserva} fue cancelada automáticamente porque ya no hay unidades disponibles en inventario.',
+              tipo: 'CANCELADA',
+            );
+          } else {
+            await _agregarNotificacionLocal(
+              tenantId: resOff.tenantId ?? targetTenant,
+              titulo: '✅ Reserva Sincronizada #${resOff.codigoReserva}',
+              mensaje: 'Tu reserva #${resOff.codigoReserva} fue confirmada en tienda física con stock apartado. Tienes 48 hrs para recogerla.',
+              tipo: 'RESERVA_SINCRONIZADA',
+            );
+          }
+          // Éxito: NO se agrega a 'restantes', por lo que sale de la cola pendiente offline
         } else {
+          // Comprobar si el servidor rechazó por stock en cero
+          bool esFaltaStock = false;
+          String errorMsg = '';
           try {
             final Map<String, dynamic> errData = json.decode(utf8.decode(resp.bodyBytes));
             final String detail = errData['detail']?.toString() ?? '';
-            if (detail.toLowerCase().contains('stock') || detail.toLowerCase().contains('insuficiente')) {
-              _alertaCancelacionStock = 'Reserva ${resOff.codigoReserva} cancelada: $detail';
-              _error = _alertaCancelacionStock;
-              // Stock en 0: no volver a meter a la cola para evitar bucles infinitos
-              continue;
+            if (detail.toLowerCase().contains('stock') ||
+                detail.toLowerCase().contains('insuficiente') ||
+                detail.toLowerCase().contains('agotado')) {
+              esFaltaStock = true;
+              errorMsg = detail;
             }
           } catch (_) {}
-          restantes.add(resOff);
+
+          if (esFaltaStock) {
+            _alertaCancelacionStock = 'Reserva ${resOff.codigoReserva} cancelada: $errorMsg';
+            _error = _alertaCancelacionStock;
+            final cancelledReserva = resOff.copyWith(
+              esOffline: false,
+              estado: 'CANCELADA',
+              observaciones: 'CANCELADA AUTOMÁTICAMENTE: $errorMsg',
+            );
+            final idxHist = historial.indexWhere((r) => r.codigoReserva == resOff.codigoReserva);
+            if (idxHist != -1) {
+              historial[idxHist] = cancelledReserva;
+            } else {
+              historial.insert(0, cancelledReserva);
+            }
+            await _agregarNotificacionLocal(
+              tenantId: resOff.tenantId ?? targetTenant,
+              titulo: '❌ Reserva #${resOff.codigoReserva} Cancelada por Stock',
+              mensaje: 'Tu reserva #${resOff.codigoReserva} fue cancelada por falta de stock: $errorMsg',
+              tipo: 'CANCELADA',
+            );
+            // Stock agotado: NO volver a meter a cola de reintentos
+          } else {
+            // Error de conexión o indisponibilidad temporal
+            restantes.add(resOff);
+          }
         }
-      } catch (_) {
+      } catch (e) {
+        // Error de red temporal al conectar
         restantes.add(resOff);
       }
     }
 
     await _guardarReservasOffline(targetTenant, restantes);
+    await _guardarHistorialDispositivo(targetTenant, historial);
     _sincronizando = false;
 
-    if (sincronizadas > 0) {
-      await cargarMisReservas(token: token, tenantId: targetTenant);
-    } else {
-      notifyListeners();
-    }
-
+    await cargarMisReservas(token: token, tenantId: targetTenant);
     return sincronizadas;
   }
 
-  /// CU10: Consulta el listado de reservas del usuario (combinando Online + Base Local Offline)
+  /// CU10: Consulta el listado de reservas del usuario (combinando Online + Historial Local Móvil)
   Future<void> cargarMisReservas({String? token, int? tenantId, bool modoOfflineSimulado = false}) async {
     final targetTenant = tenantId ?? _tenantActivoId;
     _tenantActivoId = targetTenant;
     _cargando = true;
     _error = null;
 
-    // 1. Cargar primero lo que hay en la base local del teléfono (Offline + Caché)
-    final offlineList = await _leerReservasOffline(targetTenant);
-    final cachedOnline = await _leerCacheOnline(targetTenant);
-    _reservas = [...offlineList, ...cachedOnline];
+    // 1. Cargar historial persistente del teléfono y cola pendiente offline
+    final pendientesOffline = await _leerReservasOffline(targetTenant);
+    final historialDispositivo = await _leerHistorialDispositivo(targetTenant);
+
+    // Pintar de inmediato en pantalla sin parpadeos
+    _reservas = _combinarReservas(
+      pendientesOffline: pendientesOffline,
+      historialDispositivo: historialDispositivo,
+      onlineReservas: [],
+    );
     notifyListeners();
 
     if (modoOfflineSimulado) {
@@ -354,33 +570,63 @@ class ReservationController extends ChangeNotifier {
     }
 
     try {
-      // 2. Si hay reservas offline pendientes y ya hay internet, sincronizarlas primero
-      if (offlineList.isNotEmpty) {
+      // 2. Si hay reservas pendientes en cola offline y tenemos conexión, sincronizarlas de inmediato
+      if (pendientesOffline.isNotEmpty) {
         await sincronizarReservasOffline(tenantId: targetTenant, token: token, silencioso: true);
+        return; // sincronizarReservasOffline ya invoca cargarMisReservas al culminar
       }
 
-      // 3. Consultar las reservas reales del servidor
+      // 3. Consultar las reservas reales del backend omnicanal (por cliente y por códigos locales del móvil)
+      final codigosHistorial = (await _leerHistorialDispositivo(targetTenant))
+          .map((r) => r.codigoReserva)
+          .where((c) => c.isNotEmpty)
+          .toSet()
+          .toList();
+
       final headers = <String, String>{
         'X-Tenant-ID': '$targetTenant',
       };
       if (token != null && token.isNotEmpty) {
         headers['Authorization'] = 'Bearer $token';
       }
+
+      String url = '$_reservasUrl/mis-reservas';
+      if (codigosHistorial.isNotEmpty) {
+        url += '?codigos=${Uri.encodeComponent(codigosHistorial.join(','))}';
+      }
+
       final response = await http
-          .get(Uri.parse('$_reservasUrl/mis-reservas'), headers: headers)
+          .get(Uri.parse(url), headers: headers)
           .timeout(const Duration(seconds: 7));
 
       if (response.statusCode == 200) {
         final List data = json.decode(utf8.decode(response.bodyBytes));
         final onlineReservas = data
-            .map((j) => ReservaModel.fromJson(Map<String, dynamic>.from(j)))
+            .map((j) => ReservaModel.fromJson(Map<String, dynamic>.from(j)).copyWith(esOffline: false))
             .toList();
-        await LocalStorageService.saveJson(
-          'reservas_cache_tenant_$targetTenant',
-          onlineReservas.map((r) => r.toJson()).toList(),
+
+        // Actualizar el historial persistente del dispositivo con los estados frescos del servidor
+        final updatedHistorial = await _leerHistorialDispositivo(targetTenant);
+        for (int i = 0; i < updatedHistorial.length; i++) {
+          final matchServer = onlineReservas.firstWhere(
+            (s) => s.codigoReserva == updatedHistorial[i].codigoReserva,
+            orElse: () => updatedHistorial[i],
+          );
+          if (matchServer.id != updatedHistorial[i].id ||
+              matchServer.estado != updatedHistorial[i].estado ||
+              (matchServer.observaciones != null && matchServer.observaciones != updatedHistorial[i].observaciones)) {
+            updatedHistorial[i] = matchServer.copyWith(esOffline: false);
+          }
+        }
+        await _guardarHistorialDispositivo(targetTenant, updatedHistorial);
+        await _guardarCacheOnline(targetTenant);
+
+        final remainingPending = await _leerReservasOffline(targetTenant);
+        _reservas = _combinarReservas(
+          pendientesOffline: remainingPending,
+          historialDispositivo: updatedHistorial,
+          onlineReservas: onlineReservas,
         );
-        final offRestantes = await _leerReservasOffline(targetTenant);
-        _reservas = [...offRestantes, ...onlineReservas];
         _error = null;
       }
     } catch (e) {
@@ -396,17 +642,27 @@ class ReservationController extends ChangeNotifier {
   Future<bool> cancelarReserva(int id, {String? codigoReserva, String? motivo, String? token, int? tenantId}) async {
     final targetTenant = tenantId ?? _tenantActivoId;
 
-    // Si es una reserva offline local, eliminarla de la base local
+    // 1. Si estaba en la cola de pendientes offline, removerla
     final offList = await _leerReservasOffline(targetTenant);
     final idxOff = offList.indexWhere((r) => r.id == id || (codigoReserva != null && r.codigoReserva == codigoReserva));
     if (idxOff != -1) {
       offList.removeAt(idxOff);
       await _guardarReservasOffline(targetTenant, offList);
-      _reservas.removeWhere((r) => r.id == id || (codigoReserva != null && r.codigoReserva == codigoReserva));
-      notifyListeners();
-      return true;
     }
 
+    // 2. En el historial permanente del teléfono, marcarla como CANCELADA (no borrarla para que quede constancia)
+    final hist = await _leerHistorialDispositivo(targetTenant);
+    final idxHist = hist.indexWhere((r) => r.id == id || (codigoReserva != null && r.codigoReserva == codigoReserva));
+    if (idxHist != -1) {
+      hist[idxHist] = hist[idxHist].copyWith(
+        estado: 'CANCELADA',
+        observaciones: motivo ?? 'Cancelado desde app móvil por el usuario',
+        esOffline: false,
+      );
+      await _guardarHistorialDispositivo(targetTenant, hist);
+    }
+
+    // 3. Notificar al servidor si hay conexión
     try {
       final headers = <String, String>{
         'Content-Type': 'application/json',
@@ -415,20 +671,17 @@ class ReservationController extends ChangeNotifier {
       if (token != null && token.isNotEmpty) {
         headers['Authorization'] = 'Bearer $token';
       }
-      final response = await http.patch(
+      await http.patch(
         Uri.parse('$_reservasUrl/$id/cancelar'),
         headers: headers,
         body: json.encode({'motivo': motivo ?? 'Cancelado desde app móvil'}),
-      );
-      if (response.statusCode == 200) {
-        await cargarMisReservas(token: token, tenantId: targetTenant);
-        return true;
-      }
-      return false;
+      ).timeout(const Duration(seconds: 5));
     } catch (e) {
-      debugPrint('Error al cancelar reserva: $e');
-      return false;
+      debugPrint('Cancelación enviada al servidor o diferida: $e');
     }
+
+    await cargarMisReservas(token: token, tenantId: targetTenant);
+    return true;
   }
 
   /// CU11: Atender reserva en sucursal (ENTREGAR o CANCELAR)

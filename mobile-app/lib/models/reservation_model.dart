@@ -108,7 +108,7 @@ class ReservaModel {
         rawDetalles.map((d) => ReservaDetalleItem.fromJson(Map<String, dynamic>.from(d))).toList();
 
     final codigo = json['codigo_reserva']?.toString() ?? '';
-    final isOff = (json['es_offline'] == true) || codigo.startsWith('RES-OFF-');
+    final isOff = (json['es_offline'] == true);
 
     return ReservaModel(
       id: _parseInt(json['id']),
@@ -145,5 +145,39 @@ class ReservaModel {
       'total_items': totalItems,
       'total_estimado': totalEstimado,
     };
+  }
+
+  ReservaModel copyWith({
+    int? id,
+    String? codigoReserva,
+    String? fechaReserva,
+    String? estado,
+    String? observaciones,
+    int? sucursalId,
+    String? sucursalNombre,
+    String? sucursalDireccion,
+    int? tenantId,
+    String? empresaNombre,
+    bool? esOffline,
+    List<ReservaDetalleItem>? detalles,
+    int? totalItems,
+    double? totalEstimado,
+  }) {
+    return ReservaModel(
+      id: id ?? this.id,
+      codigoReserva: codigoReserva ?? this.codigoReserva,
+      fechaReserva: fechaReserva ?? this.fechaReserva,
+      estado: estado ?? this.estado,
+      observaciones: observaciones ?? this.observaciones,
+      sucursalId: sucursalId ?? this.sucursalId,
+      sucursalNombre: sucursalNombre ?? this.sucursalNombre,
+      sucursalDireccion: sucursalDireccion ?? this.sucursalDireccion,
+      tenantId: tenantId ?? this.tenantId,
+      empresaNombre: empresaNombre ?? this.empresaNombre,
+      esOffline: esOffline ?? this.esOffline,
+      detalles: detalles ?? this.detalles,
+      totalItems: totalItems ?? this.totalItems,
+      totalEstimado: totalEstimado ?? this.totalEstimado,
+    );
   }
 }
