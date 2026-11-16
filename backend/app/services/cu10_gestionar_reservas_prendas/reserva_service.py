@@ -286,6 +286,23 @@ class ReservaService:
                 detail=f"La sucursal física ID {sucursal_id} no está activa o no pertenece a este tenant."
             )
 
+        # Idempotencia: Si la reserva con este código alfanumérico ya existe, retornarla directamente
+        codigo_solicitado = getattr(datos, "codigo_reserva", None)
+        if codigo_solicitado:
+            reserva_existente = db.query(ReservaModel).filter(
+                ReservaModel.codigoreserva == codigo_solicitado,
+                ReservaModel.tenant_id == tenant_id
+            ).first()
+            if reserva_existente:
+                resp = formatear_reserva(reserva_existente)
+                if reserva_existente.estado == "CANCELADA":
+                    resp.cancelada_sin_stock = True
+                    resp.mensaje = (
+                        reserva_existente.observaciones or
+                        f"Reserva #{codigo_solicitado} ya procesada: cancelada por falta de stock."
+                    )
+                return resp
+
         # 4. Recolectar prendas y validar existencias físicas antes de apartar
         es_reserva_offline = (
             bool(getattr(datos, "es_offline", False)) or
@@ -318,7 +335,7 @@ class ReservaService:
                     InventarioSucursalModel.varianteid == variante.id,
                     InventarioSucursalModel.sucursalid == sucursal_id,
                     InventarioSucursalModel.tenant_id == tenant_id
-                ).first()
+                ).with_for_update().first()
 
                 stock_total = inv.cantidad if (inv and inv.cantidad is not None) else 0
                 stock_res = inv.stockreservado if (inv and inv.stockreservado is not None) else 0
@@ -350,7 +367,7 @@ class ReservaService:
                     InventarioSucursalModel.varianteid == item.varianteid,
                     InventarioSucursalModel.sucursalid == sucursal_id,
                     InventarioSucursalModel.tenant_id == tenant_id
-                ).first()
+                ).with_for_update().first()
 
                 stock_total = inv.cantidad if (inv and inv.cantidad is not None) else 0
                 stock_res = inv.stockreservado if (inv and inv.stockreservado is not None) else 0
@@ -407,6 +424,13 @@ class ReservaService:
                             reservaid=reserva_cancelada.id,
                             cantidad=it.cantidad or 1
                         ))
+            elif carrito and carrito.items:
+                for item_c in carrito.items:
+                    db.add(ReservaDetalleModel(
+                        varianteid=item_c.varianteid,
+                        reservaid=reserva_cancelada.id,
+                        cantidad=item_c.cantidad or 1
+                    ))
 
             # Notificación en CU19
             try:
@@ -450,7 +474,7 @@ class ReservaService:
             prod_nom, disp_uds, _, _ = sin_stock_item
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Stock insuficiente para apartar '{prod_nom}'. Disponibles en tienda: {disp_uds} uds."
+                detail=f"Stock insuficiente para apartar '{prod_nom}'. Disponibles en tienda: {disp_uds} uds. La última unidad ya fue apartada por otro usuario."
             )
 
         if not inventarios_afectados:

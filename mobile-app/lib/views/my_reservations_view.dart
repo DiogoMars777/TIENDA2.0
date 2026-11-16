@@ -390,12 +390,31 @@ class _MyReservationsViewState extends State<MyReservationsView> {
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.cloud_upload_outlined, color: Colors.amber, size: 22),
+                      Icon(
+                        controller.hayInternet ? Icons.wifi : Icons.wifi_off,
+                        color: controller.hayInternet ? Colors.greenAccent : Colors.amber,
+                        size: 22,
+                      ),
                       const SizedBox(width: 10),
                       Expanded(
-                        child: Text(
-                          'Tienes ${controller.pendientesOfflineCount} reserva(s) guardadas sin internet en tu móvil.',
-                          style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Tienes ${controller.pendientesOfflineCount} reserva(s) guardadas sin internet.',
+                              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              controller.hayInternet
+                                  ? '🟢 Conexión detectada. Sincronizando con tienda...'
+                                  : '📡 Sin internet. Se sincronizará en cuanto actives Wi-Fi o datos.',
+                              style: TextStyle(
+                                color: controller.hayInternet ? Colors.greenAccent : Colors.amber.shade200,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                       ElevatedButton(
@@ -451,6 +470,10 @@ class _MyReservationsViewState extends State<MyReservationsView> {
                 child: RefreshIndicator(
                   onRefresh: () async {
                     final token = context.read<AuthController>().currentUser?.token;
+                    await controller.verificarYAutoSincronizar(
+                      tenantId: prodCtrl.empresaSeleccionadaId,
+                      token: token,
+                    );
                     await controller.cargarMisReservas(
                       token: token,
                       tenantId: prodCtrl.empresaSeleccionadaId,

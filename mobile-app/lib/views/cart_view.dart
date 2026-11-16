@@ -757,10 +757,14 @@ class _CartViewState extends State<CartView> {
                                 ),
                               );
                             } else {
+                              try {
+                                context.read<ProductController>().fetchCatalogoConDisponibilidad(forceRefresh: true);
+                              } catch (_) {}
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
                                   content: Text(resCtrl.error ?? 'Error al procesar reserva'),
                                   backgroundColor: Colors.redAccent,
+                                  duration: const Duration(seconds: 4),
                                 ),
                               );
                             }

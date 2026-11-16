@@ -12,6 +12,7 @@ import 'package:http/http.dart' as http;
 import '../models/reservation_model.dart';
 import '../config/api_config.dart';
 import '../services/local_storage_service.dart';
+import '../services/network_connectivity_service.dart';
 
 class ReservationController extends ChangeNotifier {
   static String get _reservasUrl => '${ApiConfig.baseUrl}/reservas';
@@ -19,14 +20,17 @@ class ReservationController extends ChangeNotifier {
   List<ReservaModel> _reservas = [];
   bool _cargando = false;
   bool _sincronizando = false;
+  bool _hayInternet = true;
   String? _error;
   String? _alertaCancelacionStock;
   int _tenantActivoId = 1;
   Timer? _autoSyncTimer;
+  StreamSubscription<bool>? _connSub;
 
   List<ReservaModel> get reservas => _reservas;
   bool get cargando => _cargando;
   bool get sincronizando => _sincronizando;
+  bool get hayInternet => _hayInternet;
   String? get error => _error;
   String? get alertaCancelacionStock => _alertaCancelacionStock;
 
@@ -44,16 +48,46 @@ class ReservationController extends ChangeNotifier {
 
   void _iniciarMonitorSincronizacion() {
     _autoSyncTimer?.cancel();
-    _autoSyncTimer = Timer.periodic(const Duration(seconds: 8), (_) {
-      if (pendientesOfflineCount > 0 && !_sincronizando) {
+    _connSub?.cancel();
+
+    // 1. Escuchar eventos directos cuando vuelve la conectividad a Internet o Wi-Fi
+    _connSub = NetworkConnectivityService.onConnectivityChanged.listen((online) {
+      _hayInternet = online;
+      notifyListeners();
+      if (online && pendientesOfflineCount > 0 && !_sincronizando) {
+        debugPrint('[ReservationController] Wi-Fi / Internet detectado por stream. Sincronizando reservas...');
         sincronizarReservasOffline(tenantId: _tenantActivoId, silencioso: true);
       }
     });
+
+    // 2. Monitor periódico activo cada 5 segundos: verifica conectividad real sin saturar
+    _autoSyncTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
+      await verificarYAutoSincronizar();
+    });
+  }
+
+  /// Verifica activamente el estado de internet / Wi-Fi y dispara la sincronización solo si hay red
+  Future<void> verificarYAutoSincronizar({int? tenantId, String? token}) async {
+    if (_sincronizando) return;
+    final targetTenant = tenantId ?? _tenantActivoId;
+
+    final online = await NetworkConnectivityService.verificarConexion();
+    if (online != _hayInternet) {
+      _hayInternet = online;
+      notifyListeners();
+    }
+
+    // CRÍTICO: SOLO si detecta que hay internet o Wi-Fi real y hay pendientes
+    if (online && pendientesOfflineCount > 0) {
+      debugPrint('[ReservationController] Conexión activa detectada. Auto-sincronizando $pendientesOfflineCount reserva(s)...');
+      await sincronizarReservasOffline(tenantId: targetTenant, token: token, silencioso: true);
+    }
   }
 
   @override
   void dispose() {
     _autoSyncTimer?.cancel();
+    _connSub?.cancel();
     super.dispose();
   }
 
@@ -295,6 +329,18 @@ class ReservationController extends ChangeNotifier {
           _cargando = false;
           notifyListeners();
           return nuevaReserva;
+        } else {
+          // El servidor respondió formalmente con un error (ej: HTTP 400 por stock insuficiente o agotado)
+          // NO debe guardarse offline si el servidor está en línea y respondió
+          String mensajeError = 'No se pudo generar la reserva';
+          try {
+            final errorData = json.decode(utf8.decode(response.bodyBytes));
+            mensajeError = errorData['detail'] ?? errorData['message'] ?? mensajeError;
+          } catch (_) {}
+          _error = mensajeError;
+          _cargando = false;
+          notifyListeners();
+          return null;
         }
       } catch (e) {
         debugPrint('Sin internet al crear reserva, guardando en base local móvil: $e');
@@ -396,7 +442,7 @@ class ReservationController extends ChangeNotifier {
     );
   }
 
-  /// CU23: Sincroniza automáticamente las reservas creadas sin internet cuando vuelve la conexión
+  /// CU23: Sincroniza automáticamente las reservas creadas sin internet cuando detecta conexión
   Future<int> sincronizarReservasOffline({
     int? tenantId,
     String? token,
@@ -406,6 +452,18 @@ class ReservationController extends ChangeNotifier {
     final pendientes = await _leerReservasOffline(targetTenant);
     if (pendientes.isEmpty) return 0;
 
+    // Verificar activamente si hay internet o Wi-Fi real antes de intentar sincronizar
+    final online = await NetworkConnectivityService.verificarConexion();
+    if (!online) {
+      if (_hayInternet != false) {
+        _hayInternet = false;
+        notifyListeners();
+      }
+      debugPrint('[ReservationController] Intento de sync omitido: Sin conexión a Internet / Wi-Fi.');
+      return 0;
+    }
+
+    _hayInternet = true;
     _sincronizando = true;
     if (!silencioso) {
       notifyListeners();

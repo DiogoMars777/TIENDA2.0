@@ -11,6 +11,7 @@ import '../models/product_model.dart';
 import '../models/inventory_model.dart';
 import '../config/api_config.dart';
 import '../services/local_storage_service.dart';
+import '../services/network_connectivity_service.dart';
 
 class ProductController extends ChangeNotifier {
   static String get baseUrl => '${ApiConfig.baseUrl}/productos';
@@ -97,6 +98,7 @@ class ProductController extends ChangeNotifier {
   /// Activa o desactiva la simulación manual de Modo Sin Internet
   void toggleModoOffline({bool? forzar}) {
     _modoOfflineSimulado = forzar ?? !_modoOfflineSimulado;
+    NetworkConnectivityService.modoOfflineForzado = _modoOfflineSimulado;
     if (_modoOfflineSimulado) {
       _usandoCacheOffline = true;
       _error = null;
