@@ -101,19 +101,34 @@
 
 .card-badge-stock {
   position: absolute;
-  top: 12px;
-  right: 12px;
+  top: 10px;
+  right: 10px;
+  z-index: 10;
   background: #dcfce7;
   color: #15803d;
   font-size: 0.72rem;
   font-weight: 700;
-  padding: 2px 8px;
+  padding: 3px 8px;
   border-radius: 9999px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .card-badge-stock.danger {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.card-badge-stock.exhausted {
   background: #fee2e2;
   color: #b91c1c;
+}
+
+.badge-reservado-pos {
+  font-size: 0.68rem;
+  opacity: 0.85;
 }
 
 .product-icon-container {
@@ -178,6 +193,65 @@
   background: #f8fafc;
   border: 1px solid #cbd5e1;
   color: #475569;
+}
+
+/* Indicador de Stock debajo de la polera */
+.prod-stock-indicator {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.stock-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.stock-disponible .stock-pill {
+  background: #f0fdf4;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
+
+.stock-bajo .stock-pill {
+  background: #fffbeb;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+
+.stock-agotado .stock-pill {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+.stock-icon {
+  font-size: 16px !important;
+  width: 16px !important;
+  height: 16px !important;
+  line-height: 16px !important;
+}
+
+.stock-main-text {
+  font-size: 0.78rem;
+  line-height: 1.2;
+}
+
+.stock-main-text strong {
+  font-weight: 700;
+}
+
+.stock-res-tag {
+  font-size: 0.72rem;
+  font-weight: 600;
+  margin-left: auto;
+  opacity: 0.85;
 }
 
 .prod-footer {

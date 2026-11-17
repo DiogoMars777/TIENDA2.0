@@ -84,11 +84,19 @@
         <div 
           *ngFor="let prod of productosFiltrados" 
           class="product-card"
-          [class.out-of-stock]="prod.stockfisico <= 0"
+          [class.out-of-stock]="getStockDisponible(prod) <= 0"
           (click)="addToCart(prod)"
         >
-          <div class="card-badge-stock" [class.danger]="getStockDisponible(prod) <= prod.stockminimo">
-            <span>{{ getStockDisponible(prod) }} disp.</span>
+          <!-- Badge flotante en la esquina superior de la tarjeta -->
+          <div 
+            class="card-badge-stock" 
+            [ngClass]="{
+              'danger': getStockDisponible(prod) <= (prod.stockminimo || 5) && getStockDisponible(prod) > 0,
+              'exhausted': getStockDisponible(prod) <= 0
+            }"
+          >
+            <span *ngIf="getStockDisponible(prod) > 0">{{ getStockDisponible(prod) }} disp.</span>
+            <span *ngIf="getStockDisponible(prod) <= 0">Agotado</span>
             <small *ngIf="(prod.stockreservado || 0) > 0" class="badge-reservado-pos">({{ prod.stockreservado }} res.)</small>
           </div>
 
@@ -103,6 +111,32 @@
               <span class="attr-tag talla">Talla: {{ prod.talla }}</span>
               <span class="attr-tag color">Color: {{ prod.color }}</span>
             </div>
+
+            <!-- Indicador de Stock directamente debajo de la polera -->
+            <div 
+              class="prod-stock-indicator" 
+              [ngClass]="{
+                'stock-disponible': getStockDisponible(prod) > (prod.stockminimo || 5),
+                'stock-bajo': getStockDisponible(prod) <= (prod.stockminimo || 5) && getStockDisponible(prod) > 0,
+                'stock-agotado': getStockDisponible(prod) <= 0
+              }"
+            >
+              <div class="stock-pill">
+                <mat-icon class="stock-icon">{{ getStockDisponible(prod) > (prod.stockminimo || 5) ? 'inventory_2' : (getStockDisponible(prod) > 0 ? 'warning' : 'production_quantity_limits') }}</mat-icon>
+                <span class="stock-main-text">
+                  <ng-container *ngIf="getStockDisponible(prod) > 0">
+                    Stock: <strong>{{ getStockDisponible(prod) }} uds</strong>
+                  </ng-container>
+                  <ng-container *ngIf="getStockDisponible(prod) <= 0">
+                    <strong>Sin existencias (0 uds)</strong>
+                  </ng-container>
+                </span>
+                <span *ngIf="(prod.stockreservado || 0) > 0" class="stock-res-tag" matTooltip="Unidades apartadas en reservas">
+                  ({{ prod.stockreservado }} res.)
+                </span>
+              </div>
+            </div>
+
             <div class="prod-footer">
               <span class="prod-price">Bs. {{ (prod.producto_precio || 85) | number:'1.2-2' }}</span>
               <button mat-mini-fab color="primary" class="btn-add-mini" [disabled]="getStockDisponible(prod) <= 0">

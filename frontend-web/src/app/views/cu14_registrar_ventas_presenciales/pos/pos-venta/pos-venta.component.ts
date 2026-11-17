@@ -334,10 +334,12 @@ export class PosVentaComponent implements OnInit, OnDestroy {
   // ============================================================================
 
   getStockDisponible(item: InventarioItem): number {
-    if (item.stockdisponible !== undefined) {
-      return item.stockdisponible;
+    if (item.stockdisponible !== undefined && item.stockdisponible !== null) {
+      return Number(item.stockdisponible);
     }
-    return Math.max(0, item.stockfisico - (item.stockreservado || 0));
+    const fisico = Number(item.stockfisico) || 0;
+    const reservado = Number(item.stockreservado) || 0;
+    return Math.max(0, fisico - reservado);
   }
 
   addToCart(item: InventarioItem): void {
