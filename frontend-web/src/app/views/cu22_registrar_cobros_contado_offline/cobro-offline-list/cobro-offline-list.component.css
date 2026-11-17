@@ -551,6 +551,12 @@
   border: 1px solid rgba(245, 158, 11, 0.35);
 }
 
+.badge-danger {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
 .action-buttons {
   display: flex;
   gap: 6px;

@@ -29,6 +29,8 @@ export interface CobroOfflineDTO {
   observaciones?: string;
   fecha_cobro: string;
   sincronizado: boolean;
+  cancelada_sin_stock?: boolean;
+  estado_sincronizacion?: string;
   fecha_sincronizacion?: string;
   venta_id?: number;
   items?: ItemCobroOfflineDTO[];

@@ -112,6 +112,7 @@ class SincronizacionOfflineService:
                 # 2. Análisis de Stock y Detección de Discrepancias
                 hay_conflicto = False
                 detalles_conflicto = []
+                nombres_prendas_sin_stock = []
 
                 for it in items:
                     v_id = it.get("variante_id")
@@ -125,98 +126,64 @@ class SincronizacionOfflineService:
                         InventarioModel.varianteid == v_id
                     ).first()
 
-                    if not inv or inv.stockfisico < cant:
+                    stock_actual = inv.stockfisico if inv else 0
+                    if not inv or stock_actual < cant:
                         hay_conflicto = True
-                        stock_actual = inv.stockfisico if inv else 0
+                        p_nom = it.get("producto_nombre") or it.get("nombre") or f"Variante #{v_id}"
+                        nombres_prendas_sin_stock.append(p_nom)
                         detalles_conflicto.append(
-                            f"Variante #{v_id} (Sol: {cant}, Disp: {stock_actual})"
+                            f"{p_nom} (Solicitado: {cant}, Disponible: {stock_actual})"
                         )
 
-                # 3. Aplicación de Estrategia de Resolución
+                # 3. Aplicación de Estrategia de Resolución: Cancelar automáticamente si falta stock
                 estado_sync = "SINCRONIZADO"
                 estrategia_aplicada = "STOCK_SUFICIENTE"
+                prendas_conflicto_str = ", ".join(nombres_prendas_sin_stock) if nombres_prendas_sin_stock else "Prenda(s)"
 
                 if hay_conflicto:
-                    if estrategia_preferida == "PRIORIZAR_TIENDA_FISICA":
-                        estado_sync = "CONFLICTO_RESUELTO"
-                        estrategia_aplicada = "PRIORIZAR_TIENDA_FISICA"
-                        conflictos_resueltos += 1
+                    # CANCELACIÓN AUTOMÁTICA POR FALTA DE STOCK:
+                    # La primera venta que llegó en orden cronológico se quedó con el stock (1 -> 0).
+                    # La segunda venta se cancela de forma automática, sin permitir stock negativo.
+                    estado_sync = "CANCELADA_SIN_STOCK"
+                    estrategia_aplicada = "CANCELAR_POR_STOCK_INSUFICIENTE"
+                    conflictos_resueltos += 1
 
-                        # Descontar stock y permitir ajuste automático
-                        for it in items:
-                            v_id = it.get("variante_id")
-                            cant = int(it.get("cantidad", 1))
-                            if not v_id:
-                                continue
-
+                    # Protección del inventario: jamás permitir que baje a negativo
+                    for it in items:
+                        v_id = it.get("variante_id")
+                        if v_id:
                             inv = db.query(InventarioModel).filter(
                                 InventarioModel.tenant_id == tenant_id,
                                 InventarioModel.sucursalid == cobro.sucursal_id,
                                 InventarioModel.varianteid == v_id
                             ).first()
+                            if inv and inv.stockfisico < 0:
+                                inv.stockfisico = 0
 
-                            if not inv:
-                                inv = InventarioModel(
-                                    tenant_id=tenant_id,
-                                    sucursalid=cobro.sucursal_id,
-                                    varianteid=v_id,
-                                    stockfisico=-cant,
-                                    stockreservado=0,
-                                    stockminimo=5
-                                )
-                                db.add(inv)
-                                db.flush()
-                            else:
-                                inv.stockfisico -= cant
+                    nota_cancelacion = (
+                        f"[[VENTA OFFLINE CANCELADA AUTOMÁTICAMENTE: STOCK AGOTADO]] "
+                        f"No hay unidades físicas disponibles para '{prendas_conflicto_str}'. "
+                        f"La última unidad ya fue adquirida previamente por otra venta. "
+                        f"Cobro provisional #{cobro.nro_recibo_provisional} por Bs. {cobro.monto} CANCELADO. "
+                        f"ACCIÓN REQUERIDA EN CAJA: Reembolsar Bs. {cobro.monto} en efectivo al cliente '{cobro.cliente_nombre}' o realizar cambio de prenda."
+                    )
 
-                            # Registrar en MovimientoInventario
-                            mov = MovimientoInventarioModel(
-                                tenant_id=tenant_id,
-                                tipomovimiento="VENTA_OFFLINE_DISCREPANCIA",
-                                cantidad=cant,
-                                motivo=f"Venta física offline con prevalencia #{cobro.nro_recibo_provisional}",
-                                referencia=cobro.nro_recibo_provisional,
-                                inventarioid=inv.id,
-                                usuarioid=usuario_id or cobro.cajero_id or 1
-                            )
-                            db.add(mov)
-
-                    elif estrategia_preferida == "AJUSTE_KARDEX":
-                        estado_sync = "CONFLICTO_RESUELTO"
-                        estrategia_aplicada = "AJUSTE_KARDEX"
-                        conflictos_resueltos += 1
-
-                        for it in items:
-                            v_id = it.get("variante_id")
-                            cant = int(it.get("cantidad", 1))
-                            if not v_id:
-                                continue
-
-                            inv = db.query(InventarioModel).filter(
-                                InventarioModel.tenant_id == tenant_id,
-                                InventarioModel.sucursalid == cobro.sucursal_id,
-                                InventarioModel.varianteid == v_id
-                            ).first()
-
-                            if inv:
-                                inv.stockfisico = max(0, inv.stockfisico - cant)
-                                mov = MovimientoInventarioModel(
-                                    tenant_id=tenant_id,
-                                    tipomovimiento="AJUSTE_KARDEX_OFFLINE",
-                                    cantidad=cant,
-                                    motivo=f"Ajuste Kardex venta offline #{cobro.nro_recibo_provisional}",
-                                    referencia=cobro.nro_recibo_provisional,
-                                    inventarioid=inv.id,
-                                    usuarioid=usuario_id or cobro.cajero_id or 1
-                                )
-                                db.add(mov)
-                    else:
-                        # BLOQUEAR / REQUIERE_INTERVENCION
-                        estado_sync = "CONFLICTO_PENDIENTE"
-                        estrategia_aplicada = "BLOQUEAR_MANUAL"
+                    cobro.sincronizado = True
+                    cobro.fecha_sincronizacion = get_bolivia_now()
+                    try:
+                        obs_dict = json.loads(cobro.observaciones) if cobro.observaciones else {}
+                        if isinstance(obs_dict, dict):
+                            obs_dict["nota"] = f"{obs_dict.get('nota', '')} {nota_cancelacion}".strip()
+                            obs_dict["estado_sincronizacion"] = "CANCELADA_SIN_STOCK"
+                            obs_dict["motivo_cancelacion"] = f"Stock agotado: {prendas_conflicto_str}"
+                            cobro.observaciones = json.dumps(obs_dict, ensure_ascii=False, default=str)
+                        else:
+                            cobro.observaciones = f"{cobro.observaciones or ''} {nota_cancelacion}".strip()
+                    except Exception:
+                        cobro.observaciones = f"{cobro.observaciones or ''} {nota_cancelacion}".strip()
 
                 else:
-                    # Stock normal
+                    # Stock normal: Venta aprobada y stock descontado
                     sincronizadas += 1
                     for it in items:
                         v_id = it.get("variante_id")
@@ -243,9 +210,9 @@ class SincronizacionOfflineService:
                             )
                             db.add(mov)
 
-                # 4. Creación de registros oficiales (Venta, DetalleVenta, Pago)
+                # 4. Creación de registros oficiales (Venta, DetalleVenta, Pago) solo si hubo stock
                 nueva_venta = None
-                if estado_sync in ("SINCRONIZADO", "CONFLICTO_RESUELTO"):
+                if estado_sync == "SINCRONIZADO":
                     cod_venta = f"VTA-SYNC-{cobro.nro_recibo_provisional}"
                     # Garantizar unicidad
                     if db.query(VentaModel).filter(VentaModel.codigoventa == cod_venta).first():
@@ -301,7 +268,7 @@ class SincronizacionOfflineService:
                     cobro.fecha_sincronizacion = get_bolivia_now()
                     cobro.venta_id = nueva_venta.id
 
-                    # Si el cobro offline corresponde a una Reserva (ej. REC-RES-XXXXXX o nota con RES-XXXXXX), marcarla como ENTREGADA
+                    # Si el cobro offline corresponde a una Reserva, marcarla como ENTREGADA
                     try:
                         import re
                         from app.models.models import ReservaModel
@@ -346,9 +313,14 @@ class SincronizacionOfflineService:
                         estado=estado_sync,
                         estrategia_conflicto=estrategia_aplicada,
                         reintentos=1,
+                        error_detalle=(
+                            f"Venta cancelada automáticamente: Stock agotado al sincronizar ({prendas_conflicto_str}). "
+                            f"La unidad física ya fue vendida en otra caja previa. Proceder a devolver Bs. {cobro.monto}."
+                            if hay_conflicto else None
+                        ),
                         fecha_operacion_origen=cobro.fecha_cobro,
                         fecha_recibido=get_bolivia_now(),
-                        fecha_procesado=get_bolivia_now() if estado_sync != "CONFLICTO_PENDIENTE" else None
+                        fecha_procesado=get_bolivia_now()
                     )
                     db.add(sync_rec)
                 else:
@@ -361,12 +333,13 @@ class SincronizacionOfflineService:
                 BitacoraController.registrar_accion(
                     db=db,
                     usuario_id=usuario_id or cobro.cajero_id,
-                    accion="SINCRONIZAR",
+                    accion="CANCELAR_VENTA_SIN_STOCK" if hay_conflicto else "SINCRONIZAR",
                     modulo="SINCRONIZACION_OFFLINE",
                     detalle=(
-                        f"Sincronizado cobro offline #{cobro.nro_recibo_provisional} -> "
-                        f"Venta #{nueva_venta.id if nueva_venta else 'N/A'}. "
-                        f"Estado: {estado_sync}, Estrategia: {estrategia_aplicada}"
+                        f"Venta offline #{cobro.nro_recibo_provisional} CANCELADA automáticamente por falta de stock. "
+                        f"Prendas: {prendas_conflicto_str}. Requerido reembolso de Bs. {cobro.monto} a {cobro.cliente_nombre}."
+                        if hay_conflicto else
+                        f"Sincronizado cobro offline #{cobro.nro_recibo_provisional} -> Venta #{nueva_venta.id if nueva_venta else 'N/A'}. Stock descontado exitosamente."
                     ),
                     tenant_id=tenant_id,
                     datos_nuevos={"nro_recibo": cobro.nro_recibo_provisional, "estado": estado_sync}
@@ -378,8 +351,12 @@ class SincronizacionOfflineService:
                     "tipo": "COBRO_OFFLINE",
                     "estado": estado_sync,
                     "mensaje": (
-                        f"Cobro {cobro.nro_recibo_provisional} procesado exitosamente "
-                        f"({'Conflicto resuelto: ' + estrategia_aplicada if hay_conflicto else 'Stock consolidado'})."
+                        f"⚠️ Venta provisional #{cobro.nro_recibo_provisional} CANCELADA AUTOMÁTICAMENTE: "
+                        f"Stock agotado al sincronizar ({prendas_conflicto_str}). "
+                        f"La última unidad ya fue adquirida previamente por otra venta en caja. "
+                        f"Proceda a la devolución de Bs. {cobro.monto} o cambio de prenda a {cobro.cliente_nombre}."
+                        if hay_conflicto else
+                        f"Cobro #{cobro.nro_recibo_provisional} procesado exitosamente como Venta #{nueva_venta.codigoventa} (Stock consolidado)."
                     ),
                     "venta_id": nueva_venta.id if nueva_venta else None,
                     "nro_recibo": cobro.nro_recibo_provisional,
@@ -432,6 +409,15 @@ class SincronizacionOfflineService:
 
         cliente_default = db.query(ClienteModel).filter(ClienteModel.tenant_id == tenant_id).first()
         cliente_id_default = cliente_default.id if cliente_default else 1
+
+        def _obtener_fecha_op(op_item):
+            d = op_item if isinstance(op_item, dict) else (op_item.dict() if hasattr(op_item, "dict") else getattr(op_item, "__dict__", {}))
+            return str(d.get("fecha_operacion") or d.get("fecha_cobro") or "")
+
+        try:
+            operaciones = sorted(operaciones, key=_obtener_fecha_op)
+        except Exception:
+            pass
 
         for op in operaciones:
             op_dict = op if isinstance(op, dict) else (op.dict() if hasattr(op, "dict") else op.__dict__)
@@ -682,6 +668,7 @@ class SincronizacionOfflineService:
 
                 # Analizar stock
                 hay_conflicto = False
+                nombres_prendas_sin_stock = []
                 for it in items:
                     v_id = it.get("variante_id")
                     cant = int(it.get("cantidad", 1))
@@ -692,74 +679,37 @@ class SincronizacionOfflineService:
                         InventarioModel.sucursalid == sucursal_id,
                         InventarioModel.varianteid == v_id
                     ).first()
-                    if not inv or inv.stockfisico < cant:
+                    stock_act = inv.stockfisico if inv else 0
+                    if not inv or stock_act < cant:
                         hay_conflicto = True
+                        p_nom = it.get("producto_nombre") or it.get("nombre") or f"Variante #{v_id}"
+                        nombres_prendas_sin_stock.append(f"{p_nom} (Sol: {cant}, Disp: {stock_act})")
 
                 estado_op = "SINCRONIZADO"
                 estrategia_aplicada = "STOCK_SUFICIENTE"
+                prendas_str = ", ".join(nombres_prendas_sin_stock) if nombres_prendas_sin_stock else "Prendas"
 
                 if hay_conflicto:
-                    if estrategia_preferida == "PRIORIZAR_TIENDA_FISICA":
-                        estado_op = "CONFLICTO_RESUELTO"
-                        estrategia_aplicada = "PRIORIZAR_TIENDA_FISICA"
-                        conflictos_resueltos += 1
+                    # CANCELACIÓN AUTOMÁTICA POR FALTA DE STOCK:
+                    # La primera venta ya consumió la existencia física disponible.
+                    # La segunda se cancela automáticamente sin generar stock negativo.
+                    estado_op = "CANCELADA_SIN_STOCK"
+                    estrategia_aplicada = "CANCELAR_POR_STOCK_INSUFICIENTE"
+                    conflictos_resueltos += 1
 
-                        for it in items:
-                            v_id = it.get("variante_id")
-                            cant = int(it.get("cantidad", 1))
-                            if not v_id:
-                                continue
+                    for it in items:
+                        v_id = it.get("variante_id")
+                        if v_id:
                             inv = db.query(InventarioModel).filter(
                                 InventarioModel.tenant_id == tenant_id,
                                 InventarioModel.sucursalid == sucursal_id,
                                 InventarioModel.varianteid == v_id
                             ).first()
-                            if not inv:
-                                inv = InventarioModel(
-                                    tenant_id=tenant_id,
-                                    sucursalid=sucursal_id,
-                                    varianteid=v_id,
-                                    stockfisico=-cant,
-                                    stockreservado=0,
-                                    stockminimo=5
-                                )
-                                db.add(inv)
-                                db.flush()
-                            else:
-                                inv.stockfisico -= cant
-
-                            mov = MovimientoInventarioModel(
-                                tenant_id=tenant_id,
-                                tipomovimiento="VENTA_OFFLINE_DISCREPANCIA",
-                                cantidad=cant,
-                                motivo=f"Venta lote offline prevalencia física {nro_recibo}",
-                                referencia=nro_recibo,
-                                inventarioid=inv.id,
-                                usuarioid=usuario_id or 1
-                            )
-                            db.add(mov)
-
-                    elif estrategia_preferida == "AJUSTE_KARDEX":
-                        estado_op = "CONFLICTO_RESUELTO"
-                        estrategia_aplicada = "AJUSTE_KARDEX"
-                        conflictos_resueltos += 1
-                        for it in items:
-                            v_id = it.get("variante_id")
-                            cant = int(it.get("cantidad", 1))
-                            if not v_id:
-                                continue
-                            inv = db.query(InventarioModel).filter(
-                                InventarioModel.tenant_id == tenant_id,
-                                InventarioModel.sucursalid == sucursal_id,
-                                InventarioModel.varianteid == v_id
-                            ).first()
-                            if inv:
-                                inv.stockfisico = max(0, inv.stockfisico - cant)
-                    else:
-                        estado_op = "CONFLICTO_PENDIENTE"
-                        estrategia_aplicada = "BLOQUEAR_MANUAL"
+                            if inv and inv.stockfisico < 0:
+                                inv.stockfisico = 0
 
                 else:
+                    # Stock suficiente: procesar y descontar normalmente
                     sincronizadas += 1
                     for it in items:
                         v_id = it.get("variante_id")
@@ -785,7 +735,7 @@ class SincronizacionOfflineService:
                             db.add(mov)
 
                 nueva_venta = None
-                if estado_op in ("SINCRONIZADO", "CONFLICTO_RESUELTO"):
+                if estado_op == "SINCRONIZADO":
                     cod_vta = f"VTA-SYNC-{nro_recibo}"
                     if db.query(VentaModel).filter(VentaModel.codigoventa == cod_vta).first():
                         cod_vta = f"{cod_vta}-{uuid.uuid4().hex[:4].upper()}"
@@ -843,18 +793,27 @@ class SincronizacionOfflineService:
                     estado=estado_op,
                     estrategia_conflicto=estrategia_aplicada,
                     reintentos=1,
+                    error_detalle=(
+                        f"Venta cancelada automáticamente: Stock agotado al sincronizar ({prendas_str}). Requiere reembolso de Bs. {monto_total}."
+                        if hay_conflicto else None
+                    ),
                     fecha_operacion_origen=fecha_origen,
                     fecha_recibido=get_bolivia_now(),
-                    fecha_procesado=get_bolivia_now() if estado_op != "CONFLICTO_PENDIENTE" else None
+                    fecha_procesado=get_bolivia_now()
                 )
                 db.add(sync_reg)
 
                 BitacoraController.registrar_accion(
                     db=db,
                     usuario_id=usuario_id,
-                    accion="SINCRONIZAR",
+                    accion="CANCELAR_VENTA_SIN_STOCK" if hay_conflicto else "SINCRONIZAR",
                     modulo="SINCRONIZACION_OFFLINE",
-                    detalle=f"Sincronizado lote offline UUID: {op_uuid[:8]} -> Venta #{nueva_venta.id if nueva_venta else 'N/A'}",
+                    detalle=(
+                        f"Venta lote offline #{nro_recibo} CANCELADA automáticamente por falta de stock. "
+                        f"Prendas: {prendas_str}. Requerido reembolso de Bs. {monto_total}."
+                        if hay_conflicto else
+                        f"Sincronizado lote offline UUID: {op_uuid[:8]} -> Venta #{nueva_venta.id if nueva_venta else 'N/A'}"
+                    ),
                     tenant_id=tenant_id
                 )
 
@@ -863,7 +822,14 @@ class SincronizacionOfflineService:
                     "uuid_operacion": op_uuid,
                     "tipo": tipo,
                     "estado": estado_op,
-                    "mensaje": f"Operación {op_uuid[:8]} sincronizada exitosamente.",
+                    "mensaje": (
+                        f"⚠️ Venta provisional #{nro_recibo} CANCELADA AUTOMÁTICAMENTE: "
+                        f"Stock agotado al sincronizar ({prendas_str}). "
+                        f"La última unidad ya fue adquirida previamente por otra venta en caja. "
+                        f"Proceda a la devolución de Bs. {monto_total} o cambio de prenda."
+                        if hay_conflicto else
+                        f"Operación #{nro_recibo} sincronizada exitosamente como Venta #{nueva_venta.codigoventa}."
+                    ),
                     "venta_id": nueva_venta.id if nueva_venta else None,
                     "nro_recibo": nro_recibo,
                     "conflicto_detectado": hay_conflicto,

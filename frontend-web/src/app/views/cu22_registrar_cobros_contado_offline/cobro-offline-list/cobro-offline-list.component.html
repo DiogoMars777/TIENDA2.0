@@ -223,9 +223,10 @@
           <td>
             <span 
               class="badge-status" 
-              [class.badge-active]="c.sincronizado" 
+              [class.badge-danger]="c.cancelada_sin_stock || (c.observaciones && c.observaciones.includes('CANCELADA'))"
+              [class.badge-active]="c.sincronizado && !c.cancelada_sin_stock && !(c.observaciones && c.observaciones.includes('CANCELADA'))" 
               [class.badge-pending]="!c.sincronizado">
-              {{ c.sincronizado ? 'SINCRONIZADO' : 'PENDIENTE SYNC' }}
+              {{ (c.cancelada_sin_stock || (c.observaciones && c.observaciones.includes('CANCELADA'))) ? 'CANCELADA (SIN STOCK)' : (c.sincronizado ? 'SINCRONIZADO' : 'PENDIENTE SYNC') }}
             </span>
           </td>
 

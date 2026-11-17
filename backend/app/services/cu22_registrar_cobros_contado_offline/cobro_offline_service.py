@@ -58,6 +58,7 @@ class CobroOfflineService:
         sucursal = db.query(SucursalModel).filter(SucursalModel.id == cobro.sucursal_id).first()
         cajero = db.query(UsuarioModel).filter(UsuarioModel.id == cobro.cajero_id).first() if cobro.cajero_id else None
         desglose = CobroOfflineService._parsear_payload_observaciones(cobro)
+        es_cancelada = "CANCELADA" in (desglose["nota"] or "").upper() or "CANCELADA" in (cobro.observaciones or "").upper()
 
         return {
             "id": cobro.id,
@@ -73,6 +74,8 @@ class CobroOfflineService:
             "cliente_nombre": cobro.cliente_nombre or "Cliente Ocasional",
             "cliente_nit": cobro.cliente_nit or "0",
             "observaciones": desglose["nota"],
+            "cancelada_sin_stock": es_cancelada,
+            "estado_sincronizacion": "CANCELADA_SIN_STOCK" if es_cancelada else ("SINCRONIZADO" if cobro.sincronizado else "PENDIENTE"),
             "fecha_cobro": cobro.fecha_cobro,
             "sincronizado": cobro.sincronizado,
             "fecha_sincronizacion": cobro.fecha_sincronizacion,
