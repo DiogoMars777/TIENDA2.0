@@ -638,6 +638,10 @@ class _CartViewState extends State<CartView> {
                               forzarOffline: productCtrl.modoOfflineSimulado,
                               items: itemsPayload,
                               token: authCtrl.currentUser?.token,
+                              clienteId: authCtrl.currentUser?.id,
+                              clienteNombre: authCtrl.currentUser?.nombre,
+                              clienteEmail: authCtrl.currentUser?.email,
+                              clienteTelefono: '70000000',
                             );
 
                             if (!context.mounted) return;

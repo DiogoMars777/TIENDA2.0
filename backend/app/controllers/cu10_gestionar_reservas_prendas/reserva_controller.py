@@ -71,15 +71,15 @@ class ReservaController:
     @staticmethod
     def cancelar_reserva(
         db: Session,
-        reserva_id: int,
+        id_o_codigo: str,
         usuario_id: int,
         motivo: Optional[str] = None,
         tenant_id: int = 1
     ) -> ReservaResponse:
-        """Cancela una reserva pendiente y libera el stockreservado"""
+        """Cancela una reserva pendiente por ID o código y libera el stockreservado"""
         return ReservaService.cancelar_reserva(
             db=db,
-            reserva_id=reserva_id,
+            id_o_codigo=id_o_codigo,
             usuario_id=usuario_id,
             motivo=motivo,
             tenant_id=tenant_id

@@ -56,8 +56,15 @@ def get_current_user_id(
 
     user_tenant = db.query(UsuarioModel).filter(
         UsuarioModel.tenant_id == tenant_id,
+        UsuarioModel.rolid == 2,
         UsuarioModel.activo == True
     ).first()
+
+    if not user_tenant:
+        user_tenant = db.query(UsuarioModel).filter(
+            UsuarioModel.tenant_id == tenant_id,
+            UsuarioModel.activo == True
+        ).first()
 
     if user_tenant:
         return user_tenant.id
@@ -139,22 +146,22 @@ def obtener_reserva(
     )
 
 
-@router.patch("/{reserva_id}/cancelar", response_model=ReservaResponse, summary="Cancelar reserva pendiente por el cliente")
+@router.patch("/{id_o_codigo}/cancelar", response_model=ReservaResponse, summary="Cancelar reserva pendiente por el cliente")
 def cancelar_reserva(
-    reserva_id: int,
+    id_o_codigo: str,
     datos: Optional[CancelarReservaRequest] = None,
     x_tenant_id: Optional[int] = Header(None, alias="X-Tenant-ID"),
     db: Session = Depends(get_db),
     usuario_id: int = Depends(get_current_user_id),
 ):
     """
-    CU10: Cancela una reserva que se encuentre en estado PENDIENTE y libera inmediatamente el stock reservado en la tienda física.
+    CU10: Cancela una reserva que se encuentre en estado PENDIENTE por ID o código alfanumérico (ej: RES-OFF-XXXX) y libera inmediatamente el stock reservado en la tienda física.
     """
     tenant_id = x_tenant_id or 1
     motivo = datos.motivo if datos else None
     return ReservaController.cancelar_reserva(
         db=db,
-        reserva_id=reserva_id,
+        id_o_codigo=id_o_codigo,
         usuario_id=usuario_id,
         motivo=motivo,
         tenant_id=tenant_id

@@ -80,6 +80,10 @@ class ReservaModel {
   final int? tenantId;
   final String? empresaNombre;
   final bool esOffline;
+  final int? clienteId;
+  final String? clienteNombre;
+  final String? clienteEmail;
+  final String? clienteTelefono;
   final List<ReservaDetalleItem> detalles;
   final int totalItems;
   final double totalEstimado;
@@ -96,6 +100,10 @@ class ReservaModel {
     this.tenantId,
     this.empresaNombre,
     this.esOffline = false,
+    this.clienteId,
+    this.clienteNombre,
+    this.clienteEmail,
+    this.clienteTelefono,
     required this.detalles,
     required this.totalItems,
     required this.totalEstimado,
@@ -122,6 +130,10 @@ class ReservaModel {
       tenantId: json['tenant_id'] != null ? _parseInt(json['tenant_id']) : null,
       empresaNombre: json['empresa_nombre']?.toString(),
       esOffline: isOff,
+      clienteId: json['cliente_id'] != null ? _parseInt(json['cliente_id']) : null,
+      clienteNombre: json['cliente_nombre']?.toString() ?? json['cliente']?['nombre']?.toString(),
+      clienteEmail: json['cliente_email']?.toString() ?? json['cliente']?['email']?.toString(),
+      clienteTelefono: json['cliente_telefono']?.toString() ?? json['cliente']?['telefono']?.toString(),
       detalles: detallesList,
       totalItems: _parseInt(json['total_items'] ?? detallesList.fold<int>(0, (s, d) => s + d.cantidad)),
       totalEstimado: _parseDouble(json['total_estimado']),
@@ -141,6 +153,10 @@ class ReservaModel {
       'tenant_id': tenantId,
       'empresa_nombre': empresaNombre,
       'es_offline': esOffline,
+      'cliente_id': clienteId,
+      'cliente_nombre': clienteNombre,
+      'cliente_email': clienteEmail,
+      'cliente_telefono': clienteTelefono,
       'detalles': detalles.map((d) => d.toJson()).toList(),
       'total_items': totalItems,
       'total_estimado': totalEstimado,
@@ -159,6 +175,10 @@ class ReservaModel {
     int? tenantId,
     String? empresaNombre,
     bool? esOffline,
+    int? clienteId,
+    String? clienteNombre,
+    String? clienteEmail,
+    String? clienteTelefono,
     List<ReservaDetalleItem>? detalles,
     int? totalItems,
     double? totalEstimado,
@@ -175,6 +195,10 @@ class ReservaModel {
       tenantId: tenantId ?? this.tenantId,
       empresaNombre: empresaNombre ?? this.empresaNombre,
       esOffline: esOffline ?? this.esOffline,
+      clienteId: clienteId ?? this.clienteId,
+      clienteNombre: clienteNombre ?? this.clienteNombre,
+      clienteEmail: clienteEmail ?? this.clienteEmail,
+      clienteTelefono: clienteTelefono ?? this.clienteTelefono,
       detalles: detalles ?? this.detalles,
       totalItems: totalItems ?? this.totalItems,
       totalEstimado: totalEstimado ?? this.totalEstimado,

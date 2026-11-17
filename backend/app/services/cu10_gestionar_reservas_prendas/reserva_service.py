@@ -221,7 +221,102 @@ class ReservaService:
         # 1. Ejecutar barrido de reservas expiradas para liberar cupos y stock
         cls.verificar_y_expirar_reservas(db, tenant_id)
 
-        user = cls._obtener_usuario_reserva(db, usuario_id, tenant_id)
+        # Resolver el cliente real que realiza la reserva (evitando asignar al Administrador)
+        cliente_user = None
+
+        # A. Si se proporcionó cliente_email explícito en la solicitud
+        if getattr(datos, "cliente_email", None) and str(datos.cliente_email).strip():
+            c_email = str(datos.cliente_email).strip().lower()
+            cliente_user = db.query(UsuarioModel).filter(
+                UsuarioModel.email == c_email,
+                UsuarioModel.tenant_id == tenant_id
+            ).first()
+            if not cliente_user:
+                cliente_user = db.query(UsuarioModel).filter(
+                    UsuarioModel.email == c_email
+                ).first()
+            if not cliente_user:
+                from app.core.security import get_password_hash
+                c_nom = getattr(datos, "cliente_nombre", None) or c_email.split('@')[0]
+                cliente_user = UsuarioModel(
+                    nombre=c_nom,
+                    apellido="",
+                    email=c_email,
+                    telefono=getattr(datos, "cliente_telefono", None) or "70000000",
+                    passwordhash=get_password_hash("guest123"),
+                    tenant_id=tenant_id,
+                    rolid=2,  # Rol Cliente
+                    activo=True
+                )
+                db.add(cliente_user)
+                db.flush()
+
+        # B. Si se proporcionó cliente_id válido de un cliente (no admin)
+        if not cliente_user and getattr(datos, "cliente_id", None):
+            posible_c = db.query(UsuarioModel).filter(
+                UsuarioModel.id == int(datos.cliente_id)
+            ).first()
+            if posible_c and posible_c.rolid != 1 and "ADMIN" not in (posible_c.nombre or "").upper():
+                cliente_user = posible_c
+
+        # C. Si usuario_id proveniente del token JWT es un cliente real (no admin)
+        if not cliente_user and usuario_id:
+            jwt_u = db.query(UsuarioModel).filter(UsuarioModel.id == usuario_id).first()
+            if jwt_u:
+                if jwt_u.rolid != 1 and "ADMIN" not in (jwt_u.nombre or "").upper():
+                    cliente_user = jwt_u
+                elif not (getattr(datos, "cliente_email", None) or getattr(datos, "cliente_nombre", None)):
+                    cliente_user = jwt_u
+
+        # D. Si el usuario actual es admin pero viene cliente_nombre en los datos, buscar o crear cliente
+        if not cliente_user and getattr(datos, "cliente_nombre", None):
+            nom_c = str(datos.cliente_nombre).strip()
+            cliente_user = db.query(UsuarioModel).filter(
+                UsuarioModel.tenant_id == tenant_id,
+                UsuarioModel.nombre.ilike(f"%{nom_c}%"),
+                UsuarioModel.rolid == 2
+            ).first()
+            if not cliente_user:
+                from app.core.security import get_password_hash
+                slug_nom = nom_c.lower().replace(" ", "")
+                cliente_user = UsuarioModel(
+                    nombre=nom_c,
+                    apellido="",
+                    email=f"{slug_nom}@tienda.bo",
+                    telefono=getattr(datos, "cliente_telefono", None) or "70000000",
+                    passwordhash=get_password_hash("guest123"),
+                    tenant_id=tenant_id,
+                    rolid=2,
+                    activo=True
+                )
+                db.add(cliente_user)
+                db.flush()
+
+        # E. Si no se especificó cliente, buscar primer cliente activo con rolid == 2 en el tenant
+        if not cliente_user:
+            cliente_user = db.query(UsuarioModel).filter(
+                UsuarioModel.tenant_id == tenant_id,
+                UsuarioModel.rolid == 2,
+                UsuarioModel.activo == True
+            ).first()
+
+        # F. Si no hay clientes en la base de datos, crear uno con rol cliente (NUNCA asignar a Admin)
+        if not cliente_user:
+            from app.core.security import get_password_hash
+            cliente_user = UsuarioModel(
+                nombre=getattr(datos, "cliente_nombre", None) or "Cliente Móvil",
+                apellido="Tienda",
+                email=f"cliente_movil_t{tenant_id}@tienda.bo",
+                telefono="70000000",
+                passwordhash=get_password_hash("guest123"),
+                tenant_id=tenant_id,
+                rolid=2,
+                activo=True
+            )
+            db.add(cliente_user)
+            db.flush()
+
+        user = cliente_user
 
         # 2. Validar límite de reservas simultáneas pendientes según cuota del plan
         reservas_activas = db.query(ReservaModel).filter(
@@ -629,28 +724,37 @@ class ReservaService:
     def cancelar_reserva(
         cls,
         db: Session,
-        reserva_id: int,
+        id_o_codigo: Any,
         usuario_id: int,
         motivo: Optional[str] = None,
         tenant_id: int = 1
     ) -> ReservaResponse:
         """
-        Permite al cliente cancelar una reserva en estado PENDIENTE.
+        Permite al cliente o admin cancelar una reserva en estado PENDIENTE por ID numérico o código único (ej: RES-OFF-XXXX).
         Libera el stockreservado en inventario y audita el evento en Bitácora (CU26).
         """
-        user = cls._obtener_usuario_reserva(db, usuario_id, tenant_id)
+        id_str = str(id_o_codigo).strip()
+        query = db.query(ReservaModel).filter(ReservaModel.tenant_id == tenant_id)
+        if id_str.isdigit():
+            query = query.filter((ReservaModel.id == int(id_str)) | (ReservaModel.codigoreserva == id_str))
+        else:
+            query = query.filter(ReservaModel.codigoreserva == id_str)
 
-        reserva = db.query(ReservaModel).filter(
-            ReservaModel.id == reserva_id,
-            ReservaModel.clienteid == user.id,
-            ReservaModel.tenant_id == tenant_id
-        ).first()
+        reserva = query.first()
+
+        # Si no se encontró en este tenant específico, buscar por código único en toda la base
+        if not reserva:
+            reserva = db.query(ReservaModel).filter(ReservaModel.codigoreserva == id_str).first()
 
         if not reserva:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Reserva no encontrada en este tenant."
+                detail=f"Reserva '{id_o_codigo}' no encontrada en el sistema."
             )
+
+        # Si ya se encuentra cancelada, retornar ok de inmediato
+        if reserva.estado == "CANCELADA":
+            return formatear_reserva(reserva)
 
         if reserva.estado != "PENDIENTE":
             raise HTTPException(
@@ -663,15 +767,14 @@ class ReservaService:
             inv = db.query(InventarioSucursalModel).filter(
                 InventarioSucursalModel.varianteid == d.varianteid,
                 InventarioSucursalModel.sucursalid == reserva.sucursalid,
-                InventarioSucursalModel.tenant_id == tenant_id
+                InventarioSucursalModel.tenant_id == reserva.tenant_id
             ).first()
             if inv:
                 inv.stockreservado = max(0, (inv.stockreservado or 0) - d.cantidad)
 
         reserva.estado = "CANCELADA"
-        if motivo:
-            nota = f"[Cancelada por cliente: {motivo}]"
-            reserva.observaciones = f"{reserva.observaciones or ''} {nota}".strip()
+        nota = f"[Cancelada por cliente: {motivo or 'Cancelado desde app móvil'}]"
+        reserva.observaciones = f"{reserva.observaciones or ''} {nota}".strip()
 
         # Auditoría en Bitácora (CU26)
         try:
@@ -679,8 +782,8 @@ class ReservaService:
                 db=db,
                 accion="CANCELAR",
                 modulo="CU10_GESTIONAR_RESERVAS",
-                usuario_id=user.id,
-                detalle=f"Reserva #{reserva.codigoreserva} cancelada. Stock temporal liberado. Motivo: {motivo or 'N/A'}",
+                usuario_id=reserva.clienteid or usuario_id,
+                detalle=f"Reserva #{reserva.codigoreserva} cancelada. Stock temporal liberado. Motivo: {motivo or 'Cancelado desde móvil'}",
                 datos_previos={"estado": "PENDIENTE", "codigo": reserva.codigoreserva},
                 datos_nuevos={"estado": "CANCELADA", "motivo": motivo}
             )

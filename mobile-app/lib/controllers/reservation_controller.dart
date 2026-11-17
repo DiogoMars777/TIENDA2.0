@@ -54,7 +54,7 @@ class ReservationController extends ChangeNotifier {
     _connSub = NetworkConnectivityService.onConnectivityChanged.listen((online) {
       _hayInternet = online;
       notifyListeners();
-      if (online && pendientesOfflineCount > 0 && !_sincronizando) {
+      if (online && !_sincronizando) {
         debugPrint('[ReservationController] Wi-Fi / Internet detectado por stream. Sincronizando reservas...');
         sincronizarReservasOffline(tenantId: _tenantActivoId, silencioso: true);
       }
@@ -77,10 +77,13 @@ class ReservationController extends ChangeNotifier {
       notifyListeners();
     }
 
-    // CRÍTICO: SOLO si detecta que hay internet o Wi-Fi real y hay pendientes
-    if (online && pendientesOfflineCount > 0) {
-      debugPrint('[ReservationController] Conexión activa detectada. Auto-sincronizando $pendientesOfflineCount reserva(s)...');
-      await sincronizarReservasOffline(tenantId: targetTenant, token: token, silencioso: true);
+    // CRÍTICO: SOLO si detecta que hay internet o Wi-Fi real y hay pendientes de creación o cancelación
+    if (online) {
+      final cancelaciones = await _leerCancelacionesPendientes(targetTenant);
+      if (pendientesOfflineCount > 0 || cancelaciones.isNotEmpty) {
+        debugPrint('[ReservationController] Conexión activa detectada. Auto-sincronizando ($pendientesOfflineCount pendientes, ${cancelaciones.length} cancelaciones)...');
+        await sincronizarReservasOffline(tenantId: targetTenant, token: token, silencioso: true);
+      }
     }
   }
 
@@ -96,6 +99,26 @@ class ReservationController extends ChangeNotifier {
     final rnd = Random();
     final sufijo = List.generate(6, (_) => chars[rnd.nextInt(chars.length)]).join();
     return 'RES-OFF-$sufijo';
+  }
+
+  Future<String?> _obtenerTokenGuardado() async {
+    try {
+      final savedUser = await LocalStorageService.readJson('auth_current_user');
+      if (savedUser is Map && savedUser['token'] != null) {
+        return savedUser['token']?.toString();
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> _obtenerUsuarioGuardado() async {
+    try {
+      final savedUser = await LocalStorageService.readJson('auth_current_user');
+      if (savedUser is Map) {
+        return Map<String, dynamic>.from(savedUser);
+      }
+    } catch (_) {}
+    return null;
   }
 
   // ============================================================================
@@ -120,6 +143,77 @@ class ReservationController extends ChangeNotifier {
       'reservas_offline_tenant_$tenantId',
       lista.map((r) => r.toJson()).toList(),
     );
+  }
+
+  /// Cola de cancelaciones diferidas generadas sin conexión
+  Future<List<Map<String, dynamic>>> _leerCancelacionesPendientes(int tenantId) async {
+    try {
+      final raw = await LocalStorageService.readJson('reservas_cancelaciones_pendientes_$tenantId');
+      if (raw is List) {
+        return List<Map<String, dynamic>>.from(raw);
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  Future<void> _guardarCancelacionesPendientes(int tenantId, List<Map<String, dynamic>> lista) async {
+    await LocalStorageService.saveJson('reservas_cancelaciones_pendientes_$tenantId', lista);
+  }
+
+  Future<void> _encolarCancelacionPendiente(int tenantId, String idOCodigo, String? motivo) async {
+    try {
+      final lista = await _leerCancelacionesPendientes(tenantId);
+      if (!lista.any((it) => it['id_o_codigo'] == idOCodigo)) {
+        lista.add({
+          'id_o_codigo': idOCodigo,
+          'motivo': motivo ?? 'Cancelado desde app móvil por el usuario',
+          'fecha': DateTime.now().toIso8601String(),
+        });
+        await _guardarCancelacionesPendientes(tenantId, lista);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _removerCancelacionPendiente(int tenantId, String idOCodigo) async {
+    try {
+      final lista = await _leerCancelacionesPendientes(tenantId);
+      lista.removeWhere((it) => it['id_o_codigo'] == idOCodigo);
+      await _guardarCancelacionesPendientes(tenantId, lista);
+    } catch (_) {}
+  }
+
+  Future<void> _procesarCancelacionesPendientes(int tenantId, {String? token}) async {
+    try {
+      final lista = await _leerCancelacionesPendientes(tenantId);
+      if (lista.isEmpty) return;
+      final String? effToken = (token != null && token.isNotEmpty) ? token : await _obtenerTokenGuardado();
+      final headers = <String, String>{
+        'Content-Type': 'application/json',
+        'X-Tenant-ID': '$tenantId',
+      };
+      if (effToken != null && effToken.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $effToken';
+      }
+
+      final List<Map<String, dynamic>> restantes = [];
+      for (final item in lista) {
+        final idOCodigo = item['id_o_codigo']?.toString();
+        if (idOCodigo == null || idOCodigo.isEmpty) continue;
+        try {
+          final res = await http.patch(
+            Uri.parse('$_reservasUrl/$idOCodigo/cancelar'),
+            headers: headers,
+            body: json.encode({'motivo': item['motivo'] ?? 'Cancelado desde app móvil'}),
+          ).timeout(const Duration(seconds: 6));
+          if (res.statusCode < 200 || res.statusCode >= 300) {
+            restantes.add(item);
+          }
+        } catch (_) {
+          restantes.add(item);
+        }
+      }
+      await _guardarCancelacionesPendientes(tenantId, restantes);
+    } catch (_) {}
   }
 
   /// Historial persistente local de todas las reservas originadas o consultadas en este móvil.
@@ -255,8 +349,12 @@ class ReservationController extends ChangeNotifier {
         mapa[r.codigoReserva] = r.copyWith(esOffline: false);
       } else {
         final server = mapa[r.codigoReserva]!;
-        // El servidor manda sobre el estado final (PAGADA, ENTREGADA, CANCELADA)
-        mapa[r.codigoReserva] = server.copyWith(esOffline: false);
+        // REGLA CLAVE: Si el usuario canceló localmente en su móvil, mandar sobre el servidor si este todavía reporta PENDIENTE
+        if (r.estado == 'CANCELADA' && server.estado == 'PENDIENTE') {
+          mapa[r.codigoReserva] = r.copyWith(esOffline: false);
+        } else {
+          mapa[r.codigoReserva] = server.copyWith(esOffline: false);
+        }
       }
     }
 
@@ -284,6 +382,10 @@ class ReservationController extends ChangeNotifier {
     String? empresaNombre,
     String? observaciones,
     String? token,
+    int? clienteId,
+    String? clienteNombre,
+    String? clienteEmail,
+    String? clienteTelefono,
     bool forzarOffline = false,
     List<Map<String, dynamic>>? items,
   }) async {
@@ -293,6 +395,14 @@ class ReservationController extends ChangeNotifier {
     _tenantActivoId = targetTenant;
     notifyListeners();
 
+    // Resolver datos del cliente autenticado en el dispositivo
+    final savedUser = await _obtenerUsuarioGuardado();
+    final String? effToken = (token != null && token.isNotEmpty) ? token : savedUser?['token']?.toString();
+    final int? effClienteId = clienteId ?? (savedUser?['id'] is num ? (savedUser?['id'] as num).toInt() : null);
+    final String? effClienteNombre = clienteNombre ?? savedUser?['nombre']?.toString();
+    final String? effClienteEmail = clienteEmail ?? savedUser?['email']?.toString();
+    final String? effClienteTelefono = clienteTelefono ?? '70000000';
+
     // 1. Si NO está forzado el modo offline, intentamos crearla en el servidor primero
     if (!forzarOffline) {
       try {
@@ -300,8 +410,8 @@ class ReservationController extends ChangeNotifier {
           'Content-Type': 'application/json',
           'X-Tenant-ID': '$targetTenant',
         };
-        if (token != null && token.isNotEmpty) {
-          headers['Authorization'] = 'Bearer $token';
+        if (effToken != null && effToken.isNotEmpty) {
+          headers['Authorization'] = 'Bearer $effToken';
         }
 
         final payloadItems = (items ?? []).map((it) => {
@@ -317,6 +427,10 @@ class ReservationController extends ChangeNotifier {
             if (sucursalId != null) 'sucursal_id': sucursalId,
             if (observaciones != null) 'observaciones': observaciones,
             if (payloadItems.isNotEmpty) 'items': payloadItems,
+            if (effClienteId != null) 'cliente_id': effClienteId,
+            if (effClienteNombre != null) 'cliente_nombre': effClienteNombre,
+            if (effClienteEmail != null) 'cliente_email': effClienteEmail,
+            if (effClienteTelefono != null) 'cliente_telefono': effClienteTelefono,
           }),
         ).timeout(const Duration(seconds: 6));
 
@@ -391,6 +505,10 @@ class ReservationController extends ChangeNotifier {
         tenantId: targetTenant,
         empresaNombre: empresaNombre,
         esOffline: true,
+        clienteId: effClienteId,
+        clienteNombre: effClienteNombre,
+        clienteEmail: effClienteEmail,
+        clienteTelefono: effClienteTelefono,
         detalles: detallesOffline,
         totalItems: totalUds,
         totalEstimado: totalBs,
@@ -426,6 +544,10 @@ class ReservationController extends ChangeNotifier {
     String? empresaNombre,
     String? observaciones,
     String? token,
+    int? clienteId,
+    String? clienteNombre,
+    String? clienteEmail,
+    String? clienteTelefono,
     bool forzarOffline = false,
     List<Map<String, dynamic>>? items,
   }) async {
@@ -437,6 +559,10 @@ class ReservationController extends ChangeNotifier {
       empresaNombre: empresaNombre,
       observaciones: observaciones,
       token: token,
+      clienteId: clienteId,
+      clienteNombre: clienteNombre,
+      clienteEmail: clienteEmail,
+      clienteTelefono: clienteTelefono,
       forzarOffline: forzarOffline,
       items: items,
     );
@@ -450,7 +576,8 @@ class ReservationController extends ChangeNotifier {
   }) async {
     final targetTenant = tenantId ?? _tenantActivoId;
     final pendientes = await _leerReservasOffline(targetTenant);
-    if (pendientes.isEmpty) return 0;
+    final cancelaciones = await _leerCancelacionesPendientes(targetTenant);
+    if (pendientes.isEmpty && cancelaciones.isEmpty) return 0;
 
     // Verificar activamente si hay internet o Wi-Fi real antes de intentar sincronizar
     final online = await NetworkConnectivityService.verificarConexion();
@@ -469,18 +596,23 @@ class ReservationController extends ChangeNotifier {
       notifyListeners();
     }
 
+    // 0. Procesar cancelaciones encoladas en modo offline
+    await _procesarCancelacionesPendientes(targetTenant, token: token);
+
     int sincronizadas = 0;
     final restantes = <ReservaModel>[];
     final historial = await _leerHistorialDispositivo(targetTenant);
 
     for (final resOff in pendientes) {
       try {
+        final String? tokenGuardado = await _obtenerTokenGuardado();
+        final String? effToken = (token != null && token.isNotEmpty) ? token : tokenGuardado;
         final headers = <String, String>{
           'Content-Type': 'application/json',
           'X-Tenant-ID': '${resOff.tenantId ?? targetTenant}',
         };
-        if (token != null && token.isNotEmpty) {
-          headers['Authorization'] = 'Bearer $token';
+        if (effToken != null && effToken.isNotEmpty) {
+          headers['Authorization'] = 'Bearer $effToken';
         }
 
         final payloadItems = resOff.detalles.map((d) => {
@@ -499,6 +631,10 @@ class ReservationController extends ChangeNotifier {
             'fecha_reserva': resOff.fechaReserva,
             'observaciones': resOff.observaciones ?? '[SINCRONIZADA DESDE MÓVIL OFFLINE ${resOff.codigoReserva}]',
             'items': payloadItems,
+            if (resOff.clienteId != null) 'cliente_id': resOff.clienteId,
+            if (resOff.clienteNombre != null) 'cliente_nombre': resOff.clienteNombre,
+            if (resOff.clienteEmail != null) 'cliente_email': resOff.clienteEmail,
+            if (resOff.clienteTelefono != null) 'cliente_telefono': resOff.clienteTelefono,
           }),
         ).timeout(const Duration(seconds: 7));
 
@@ -670,6 +806,11 @@ class ReservationController extends ChangeNotifier {
             (s) => s.codigoReserva == updatedHistorial[i].codigoReserva,
             orElse: () => updatedHistorial[i],
           );
+          // PRESERVACIÓN DE CANCELACIÓN: Si el usuario ya canceló localmente en su móvil,
+          // jamás permitir que una respuesta PENDIENTE desactualizada del servidor lo revierta.
+          if (updatedHistorial[i].estado == 'CANCELADA' && matchServer.estado == 'PENDIENTE') {
+            continue;
+          }
           if (matchServer.id != updatedHistorial[i].id ||
               matchServer.estado != updatedHistorial[i].estado ||
               (matchServer.observaciones != null && matchServer.observaciones != updatedHistorial[i].observaciones)) {
@@ -699,8 +840,11 @@ class ReservationController extends ChangeNotifier {
   /// CU10: Cancela una reserva pendiente (Online o Local Offline)
   Future<bool> cancelarReserva(int id, {String? codigoReserva, String? motivo, String? token, int? tenantId}) async {
     final targetTenant = tenantId ?? _tenantActivoId;
+    final String idParaEndpoint = (codigoReserva != null && codigoReserva.isNotEmpty)
+        ? codigoReserva
+        : '$id';
 
-    // 1. Si estaba en la cola de pendientes offline, removerla
+    // 1. Si estaba en la cola de pendientes offline, removerla de creación pendiente
     final offList = await _leerReservasOffline(targetTenant);
     final idxOff = offList.indexWhere((r) => r.id == id || (codigoReserva != null && r.codigoReserva == codigoReserva));
     if (idxOff != -1) {
@@ -720,22 +864,46 @@ class ReservationController extends ChangeNotifier {
       await _guardarHistorialDispositivo(targetTenant, hist);
     }
 
-    // 3. Notificar al servidor si hay conexión
+    // 3. Reflejar inmediatamente en memoria _reservas para que la UI se actualice al instante sin saltos ni parpadeos
+    for (int i = 0; i < _reservas.length; i++) {
+      if (_reservas[i].id == id || (codigoReserva != null && _reservas[i].codigoReserva == codigoReserva)) {
+        _reservas[i] = _reservas[i].copyWith(
+          estado: 'CANCELADA',
+          observaciones: motivo ?? 'Cancelado desde app móvil por el usuario',
+          esOffline: false,
+        );
+      }
+    }
+    notifyListeners();
+
+    // 4. Enviar cancelación al backend usando ID numérico o código único alfanumérico (ej: RES-OFF-XXXX)
     try {
+      final String? tokenGuardado = await _obtenerTokenGuardado();
+      final String? effToken = (token != null && token.isNotEmpty) ? token : tokenGuardado;
       final headers = <String, String>{
         'Content-Type': 'application/json',
         'X-Tenant-ID': '$targetTenant',
       };
-      if (token != null && token.isNotEmpty) {
-        headers['Authorization'] = 'Bearer $token';
+      if (effToken != null && effToken.isNotEmpty) {
+        headers['Authorization'] = 'Bearer $effToken';
       }
-      await http.patch(
-        Uri.parse('$_reservasUrl/$id/cancelar'),
+
+      final response = await http.patch(
+        Uri.parse('$_reservasUrl/$idParaEndpoint/cancelar'),
         headers: headers,
         body: json.encode({'motivo': motivo ?? 'Cancelado desde app móvil'}),
-      ).timeout(const Duration(seconds: 5));
+      ).timeout(const Duration(seconds: 6));
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        debugPrint('[ReservationController] Cancelación exitosa en backend para $idParaEndpoint (status: ${response.statusCode})');
+        await _removerCancelacionPendiente(targetTenant, idParaEndpoint);
+      } else {
+        debugPrint('[ReservationController] Estado ${response.statusCode} al cancelar $idParaEndpoint, encolando offline');
+        await _encolarCancelacionPendiente(targetTenant, idParaEndpoint, motivo);
+      }
     } catch (e) {
-      debugPrint('Cancelación enviada al servidor o diferida: $e');
+      debugPrint('[ReservationController] Error de red al cancelar $idParaEndpoint (encolado offline): $e');
+      await _encolarCancelacionPendiente(targetTenant, idParaEndpoint, motivo);
     }
 
     await cargarMisReservas(token: token, tenantId: targetTenant);

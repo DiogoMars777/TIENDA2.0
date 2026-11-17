@@ -65,6 +65,10 @@ class ReservaCreate(BaseModel):
     codigo_reserva: Optional[str] = None
     es_offline: Optional[bool] = False
     fecha_reserva: Optional[datetime] = None
+    cliente_id: Optional[int] = None
+    cliente_nombre: Optional[str] = None
+    cliente_email: Optional[str] = None
+    cliente_telefono: Optional[str] = None
 
 
 class CancelarReservaRequest(BaseModel):
